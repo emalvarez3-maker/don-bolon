@@ -3,7 +3,12 @@ package ec.donbolon.app.data
 import java.time.LocalDate
 import java.time.LocalTime
 
-/** One evidence-based principle the app is built on, shown in the "Mente" library. */
+/** Something Don Bolón says: a line, optionally the study behind it and a one-tap next step. */
+data class Tip(val mood: Mood, val text: String, val source: String? = null, val action: Action? = null) {
+    enum class Action(val label: String) { CAPTURE("Registrar"), SOS("3 minutos"), CHAT("¿Qué como?") }
+}
+
+/** One evidence-based principle the app is built on; Don Bolón brings them up one at a time. */
 data class Principle(val title: String, val body: String, val tryThis: String, val source: String)
 
 object Science {
@@ -96,31 +101,76 @@ object Science {
 
     fun tipOfDay(day: LocalDate = LocalDate.now()) = principles[(day.toEpochDay() % principles.size).toInt()]
 
-    /** What Don Bolón says on the home screen, picked from the state of the day. */
-    fun bolonLine(state: AppState, targets: Targets, now: LocalTime = LocalTime.now()): Pair<Mood, String> {
+    /**
+     * What Don Bolón has to say right now, most relevant first. The science lives here instead
+     * of on the screen: he brings up a principle only when the day gives a reason to.
+     */
+    fun tips(state: AppState, targets: Targets, now: LocalTime = LocalTime.now()): List<Tip> {
         val today = LocalDate.now()
         val t = state.totalsOn(today)
         val meals = state.mealsOn(today)
         val left = targets.kcal - t.kcal
         val yesterday = state.totalsOn(today.minusDays(1)).kcal
         val name = state.profile.name.ifBlank { "humano" }
-        return when {
-            now.hour >= 23 || now.hour < 5 -> Mood.SLEEPY to "Grrr… ya es tarde, $name. La cocina cerró. Agua y a dormir: dormir bien también es dieta."
-            meals.isEmpty() && yesterday > targets.kcal * 1.15 ->
-                Mood.GRUMPY to "Ayer te pasaste. ¿Y? Hoy se come normal, sin castigo. Gruño, pero no te voy a dejar compensar con hambre."
-            meals.isEmpty() && now.hour >= 11 -> Mood.ANGRY to "¿Nada registrado todavía? Grrr. No te pido perfección, te pido una foto."
-            meals.isEmpty() -> Mood.GRUMPY to "Hmpf. Buenos días, $name. Cuando comas algo, me lo enseñas. Yo vigilo."
-            state.profile.priorities.muscle >= 0.5 && today !in state.workouts && now.hour in 17..21 &&
-                Nutrition.workoutsThisWeek(state) < state.profile.trainDays ->
-                Mood.GRUMPY to "¿Y el entreno, $name? Los cuadritos se descubren en la cocina, pero se construyen con pesas. Llevas ${Nutrition.workoutsThisWeek(state)} de ${state.profile.trainDays} esta semana."
-            left < -targets.kcal * 0.10 -> Mood.ANGRY to "Te pasaste ${(-left).toInt()} kcal. Respira. Una comida no decide nada; la siguiente que sea liviana y con proteína."
-            Nutrition.onTarget(t.kcal, targets.kcal, targets.band) && t.protein >= targets.protein * 0.9 ->
-                Mood.PROUD to "…Bien hecho. No te acostumbres a que lo diga. Calorías en rango Y proteína cumplida."
-            left in 0.0..(targets.kcal * 0.10) -> Mood.PROUD to "Casi en la meta. Si te da hambre: verduras o algo con proteína. Nada de picar por picar."
-            t.protein < targets.protein * 0.5 && now.hour >= 15 ->
-                Mood.GRUMPY to "Llevas ${t.protein.toInt()} g de proteína de ${targets.protein}. Ni un bolón vive solo de verde. Ponle pollo, huevo, atún o chochos a la siguiente."
-            else -> Mood.GRUMPY to "Te quedan ${left.toInt()} kcal. Úsalas con cabeza, no con antojo."
-        }
+        val streak = Nutrition.streak(state.loggedDays, today)
+        val water = state.water[today] ?: 0
+        val out = mutableListOf<Tip>()
+
+        if (now.hour >= 23 || now.hour < 5) out += Tip(
+            Mood.SLEEPY, "Grrr… ya es tarde, $name. La cocina cerró. Dormir poco da más hambre mañana: agua y a la cama.",
+            "Dormir mal sube la grelina y los antojos (Spiegel et al., 2004)",
+        )
+        if (meals.isEmpty() && yesterday > targets.kcal * 1.15) out += Tip(
+            Mood.GRUMPY, "Ayer te pasaste. ¿Y? Hoy se come normal. Nada de compensar con hambre: eso es lo que trae el rebote.",
+            "La autocompasión tras un desliz reduce comer de más (Adams & Leary, 2007)",
+        )
+        if (meals.isEmpty()) out += if (now.hour >= 11) Tip(
+            Mood.ANGRY, "¿Nada registrado todavía? Grrr. No te pido perfección, te pido una foto.",
+            "Registrar con constancia es lo que más predice el resultado (Burke et al., 2011)", Tip.Action.CAPTURE,
+        ) else Tip(Mood.GRUMPY, "Hmpf. Buenos días, $name. Cuando comas algo, me lo enseñas. Yo vigilo.", null, Tip.Action.CAPTURE)
+
+        val lastReason = meals.lastOrNull()?.reason
+        if (lastReason != null && !lastReason.physical) out += Tip(
+            Mood.GRUMPY, "La última fue por ${lastReason.label.lowercase()}, no por hambre. La próxima vez que te pase, aguanta 3 minutos conmigo antes.",
+            "Los antojos suben y bajan solos como olas (Bowen & Marlatt, 2009)", Tip.Action.SOS,
+        )
+        if (left < -targets.kcal * targets.band) out += Tip(
+            Mood.ANGRY, "Te pasaste ${(-left).toInt()} kcal. Respira. Una comida no decide nada; lo que daña es el \"ya qué más da\".",
+            "El efecto \"qué más da\" en dietas (Polivy & Herman, 1985)",
+        )
+        if (state.profile.priorities.muscle >= 0.5 && today !in state.workouts && now.hour in 16..21 &&
+            Nutrition.workoutsThisWeek(state) < state.profile.trainDays
+        ) out += Tip(
+            Mood.GRUMPY, "¿Y el entreno? Los cuadritos se descubren en la cocina, pero se construyen con pesas. Llevas ${Nutrition.workoutsThisWeek(state)} de ${state.profile.trainDays} esta semana.",
+            "Cada músculo ≥ 2 veces por semana (Schoenfeld et al., 2016)",
+        )
+        if (meals.isNotEmpty() && Nutrition.onTarget(t.kcal, targets.kcal, targets.band) && t.protein >= targets.protein * 0.9) out += Tip(
+            Mood.PROUD, "…Bien hecho. No te acostumbres a que lo diga. Calorías en rango y proteína cumplida.",
+        )
+        if (meals.isNotEmpty() && t.protein < targets.protein * 0.5 && now.hour >= 14) out += Tip(
+            Mood.GRUMPY, "Llevas ${t.protein.toInt()} g de proteína de ${targets.protein}. Ni un bolón vive solo de verde: pollo, huevo, atún o chochos en la siguiente.",
+            "La proteína es lo que más sacia y protege el músculo (Leidy et al., 2015)",
+        )
+        if (meals.size >= 2 && t.fiber < targets.fiber * 0.4 && now.hour >= 17) out += Tip(
+            Mood.GRUMPY, "Poca fibra hoy (${t.fiber.toInt()} g). Media porción de verduras o una fruta en la cena y listo.",
+            "25–30 g de fibra se asocian a menos enfermedad (Reynolds et al., 2019)",
+        )
+        if (now.hour >= 15 && water < targets.waterGlasses / 3) out += Tip(
+            Mood.GRUMPY, "Llevas $water vasos de agua. A veces la \"hambre\" de la tarde es sed. Toma uno y vuelve a preguntarte.",
+        )
+        if (streak in listOf(3, 7, 14, 21, 30, 45, 66) && meals.isNotEmpty()) out += Tip(
+            Mood.PROUD, "$streak días seguidos registrando. Hmpf. Así es como un hábito se vuelve automático.",
+            "En promedio un hábito tarda 66 días (Lally et al., 2010)",
+        )
+        if (meals.isNotEmpty() && meals.none { it.mindful } && now.hour in 11..15) out += Tip(
+            Mood.GRUMPY, "Hoy come una vez sin celular. Despacio. Notarás que te llenas antes.",
+            "Comer distraído aumenta lo que comes (Robinson et al., 2013)",
+        )
+        if (meals.isNotEmpty() && left > 0) out += Tip(Mood.GRUMPY, "Te quedan ${left.toInt()} kcal. Úsalas con cabeza, no con antojo.", null, Tip.Action.CHAT)
+        // Always end with one principle from the library, so there is something new each day.
+        val p = tipOfDay()
+        out += Tip(Mood.GRUMPY, "${p.title}. ${p.tryThis}", p.source)
+        return out
     }
 
     /** The persona and rules for the AI coach. Context about the user is appended per request. */

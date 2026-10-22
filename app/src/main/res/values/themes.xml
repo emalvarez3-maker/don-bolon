@@ -1,9 +1,9 @@
 <resources>
-    <style name="Theme.DonBolon" parent="android:Theme.Material.NoActionBar">
-        <item name="android:windowBackground">@color/night</item>
+    <style name="Theme.DonBolon" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/cream</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
-    <color name="night">#140D09</color>
-    <color name="honey">#F2A93B</color>
+    <color name="cream">#FBF5EC</color>
+    <color name="honey">#EE9A1F</color>
 </resources>

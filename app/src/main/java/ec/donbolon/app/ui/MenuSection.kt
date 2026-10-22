@@ -6,10 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
@@ -28,7 +26,6 @@ import androidx.compose.ui.unit.sp
 import ec.donbolon.app.AppModel
 import ec.donbolon.app.data.AppState
 import ec.donbolon.app.data.Meal
-import ec.donbolon.app.data.Mood
 import ec.donbolon.app.data.PlannedMeal
 import ec.donbolon.app.data.Planner
 import ec.donbolon.app.data.Science
@@ -37,41 +34,51 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.LocalDate
+import java.time.LocalTime
 import java.util.UUID
+import kotlin.math.max
 import kotlin.math.roundToInt
 
+/** Meals in the order they happen, with the hour each one is "over". */
+private val dayOrder = listOf(Slot.DESAYUNO to 11, Slot.ALMUERZO to 16, Slot.SNACK to 19, Slot.CENA to 23)
+
+/** The next meal of the day that hasn't been eaten and whose time hasn't passed. */
+fun nextSlot(state: AppState, now: LocalTime = LocalTime.now()): Slot? {
+    val eaten = state.mealsOn(LocalDate.now()).map { it.slot }.toSet()
+    return dayOrder.firstOrNull { (slot, until) -> slot !in eaten && now.hour < until }?.first
+}
+
 /**
- * "Tu menú de hoy": a ready-made day that fits the targets. Eating a planned meal is one tap,
- * which makes logging nearly free — the single biggest lever on adherence.
+ * One idea for the next meal, sized to what is left of the day (Fitia-style planning, one
+ * meal at a time so it never feels like homework). "Lo comí" logs it with one tap.
  */
 @Composable
-fun MenuSection(model: AppModel, state: AppState) {
+fun NextMeal(model: AppModel, state: AppState) {
+    val slot = nextSlot(state) ?: return
     val scope = rememberCoroutineScope()
     val today = LocalDate.now()
-    val menu = state.menu[today]
-    var busy by remember { mutableStateOf<Set<Slot>>(emptySet()) }
-    var note by remember { mutableStateOf<String?>(null) }
+    val plan = state.menu[today]?.firstOrNull { it.slot == slot && !it.eaten }
+    var busy by remember { mutableStateOf(false) }
 
-    fun build(slots: List<Slot>, avoid: List<String>) {
-        busy = busy + slots
-        note = null
+    fun budget(): Int {
+        val targets = model.targets()
+        val left = targets.kcal - state.totalsOn(today).kcal
+        val remaining = dayOrder.map { it.first }.dropWhile { it != slot }.filter { s -> state.mealsOn(today).none { it.slot == s } }
+        val share = Planner.share.getValue(slot) / remaining.sumOf { Planner.share.getValue(it) }
+        return max(150.0, left * share).roundToInt()
+    }
+
+    fun idea() {
+        busy = true
         scope.launch {
-            val targets = model.targets()
-            val budgets = slots.associateWith { (targets.kcal * Planner.share.getValue(it)).roundToInt() }
+            val kcal = budget()
+            val avoid = listOfNotNull(plan?.title)
             val ai = model.ai()
-            val fresh: List<PlannedMeal> = if (!ai.available) budgets.map { (s, k) -> Planner.meal(s, k.toDouble(), avoid.firstOrNull()) } else try {
-                val got = withContext(Dispatchers.IO) { ai.menu(Science.context(model.store.state.value, targets), budgets, avoid) }
-                // Anything the model skipped is filled from the offline planner.
-                slots.map { s -> got.firstOrNull { it.slot == s } ?: Planner.meal(s, budgets.getValue(s).toDouble()) }
-            } catch (e: Exception) {
-                note = "No pude preguntarle a la IA (${e.message}). Te armé uno con mi libreta."
-                budgets.map { (s, k) -> Planner.meal(s, k.toDouble(), avoid.firstOrNull()) }
-            }
-            model.store.edit { s ->
-                val current = s.menu[today].orEmpty().filterNot { it.slot in slots }
-                s.copy(menu = s.menu + (today to (current + fresh).sortedBy { it.slot.ordinal }))
-            }
-            busy = busy - slots.toSet()
+            val fresh = if (!ai.available) Planner.meal(slot, kcal.toDouble(), avoid.firstOrNull()) else runCatching {
+                withContext(Dispatchers.IO) { ai.menu(Science.context(model.store.state.value, model.targets()), mapOf(slot to kcal), avoid) }.firstOrNull()
+            }.getOrNull() ?: Planner.meal(slot, kcal.toDouble(), avoid.firstOrNull())
+            model.store.edit { s -> s.copy(menu = s.menu + (today to (s.menu[today].orEmpty().filterNot { it.slot == slot } + fresh))) }
+            busy = false
         }
     }
 
@@ -80,67 +87,28 @@ fun MenuSection(model: AppModel, state: AppState) {
         model.store.edit { s -> s.copy(menu = s.menu + (today to s.menu[today].orEmpty().map { if (it.slot == p.slot) it.copy(eaten = true) else it })) }
     }
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Label("Tu menú de hoy", Modifier.weight(1f))
-        if (menu != null && busy.isEmpty()) QuietButton("Rehacer", color = C.muted) { build(Slot.entries.filter { s -> menu.none { it.slot == s && it.eaten } }, menu.map { it.title }) }
-    }
-    Gap(8.dp)
-    if (menu == null) {
-        Panel {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Bolon(if (busy.isEmpty()) Mood.GRUMPY else Mood.THINKING, 56.dp, talking = busy.isNotEmpty())
-                HGap(12.dp)
-                Column(Modifier.weight(1f)) {
-                    Text("¿No sabes qué comer?", fontWeight = FontWeight.Medium)
-                    Text("Te armo el día completo, ya cuadrado con tus calorías y proteína.", color = C.muted, fontSize = 13.sp)
-                }
-            }
-            Gap(12.dp)
-            PrimaryButton(if (busy.isEmpty()) "Armar mi menú" else "Cocinando ideas…", enabled = busy.isEmpty()) { build(Slot.entries, emptyList()) }
-        }
-    } else {
-        Column(Modifier.fillMaxWidth().clip(Shape).background(C.card)) {
-            menu.forEachIndexed { i, p ->
-                if (i > 0) androidx.compose.material3.HorizontalDivider(Modifier.padding(horizontal = 16.dp), color = C.line)
-                PlannedRow(p, loading = p.slot in busy, onEat = { eat(p) }, onSwap = { build(listOf(p.slot), listOf(p.title)) })
-            }
-            val left = menu.filterNot { it.eaten }.sumOf { it.totals.kcal }
-            Text(
-                "Menú: ${menu.sumOf { it.totals.kcal }.fmt()} kcal · ${menu.sumOf { it.totals.protein }.fmt()} g proteína" + if (left > 0) " · faltan ${left.fmt()}" else "",
-                color = C.faint, fontSize = 12.sp, modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp, top = 2.dp),
-            )
-        }
-    }
-    note?.let { Text(it, color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp)) }
-}
-
-@Composable
-private fun PlannedRow(p: PlannedMeal, loading: Boolean, onEat: () -> Unit, onSwap: () -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 16.dp, vertical = 12.dp)) {
+    Panel(padding = 16.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(p.slot.emoji, fontSize = 18.sp)
+            Text(slot.emoji, fontSize = 20.sp)
             HGap(10.dp)
             Column(Modifier.weight(1f)) {
-                Text(p.slot.label, color = C.faint, fontSize = 11.sp)
-                Text(p.title, fontWeight = FontWeight.Medium, fontSize = 15.sp, color = if (p.eaten) C.muted else C.text)
+                val moment = when (slot) { Slot.DESAYUNO -> "en el desayuno"; Slot.ALMUERZO -> "en el almuerzo"; Slot.CENA -> "en la cena"; Slot.SNACK -> "de snack" }
+                Text("¿Qué como $moment?", color = C.muted, fontSize = 12.sp)
+                Text(plan?.title ?: "Te doy una idea que cuadra con tu día", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             }
-            if (loading) CircularProgressIndicator(Modifier.size(18.dp), color = C.honey, strokeWidth = 2.dp)
-            else Text("${p.totals.kcal.fmt()} kcal", fontSize = 13.sp, color = C.muted)
+            if (busy) CircularProgressIndicator(Modifier.size(18.dp), color = C.honey, strokeWidth = 2.dp)
+            else plan?.let { Text("${it.totals.kcal.fmt()} kcal", color = C.muted, fontSize = 13.sp) }
         }
-        if (open) {
+        plan?.let { p ->
             Gap(6.dp)
-            p.items.forEach { Text("· ${it.name}  ${it.grams.fmt()} g", color = C.muted, fontSize = 13.sp, modifier = Modifier.padding(start = 30.dp)) }
-            Text("P ${p.totals.protein.fmt()} · C ${p.totals.carbs.fmt()} · G ${p.totals.fat.fmt()}", color = C.faint, fontSize = 12.sp, modifier = Modifier.padding(start = 30.dp, top = 2.dp))
+            Text(p.items.joinToString(" · ") { "${it.name} ${it.grams.fmt()} g" }, color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(start = 30.dp))
         }
-        Gap(8.dp)
-        Row(Modifier.padding(start = 30.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (p.eaten) {
-                Box(Modifier.size(18.dp).clip(CircleShape).background(C.good), contentAlignment = Alignment.Center) { Text("✓", color = C.night, fontSize = 11.sp) }
-                Text("Registrado", color = C.good, fontSize = 13.sp)
-            } else if (!loading) {
-                SmallChip("Lo comí", true, onEat)
-                SmallChip("Cambiar", false, onSwap)
+        Gap(10.dp)
+        Row(Modifier.padding(start = 30.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (plan == null) SmallChip(if (busy) "Pensando…" else "Dame una idea", true) { if (!busy) idea() }
+            else if (!busy) {
+                SmallChip("Lo comí", true) { eat(plan) }
+                SmallChip("Otra idea", false) { idea() }
             }
         }
     }
@@ -149,7 +117,7 @@ private fun PlannedRow(p: PlannedMeal, loading: Boolean, onEat: () -> Unit, onSw
 @Composable
 private fun SmallChip(text: String, primary: Boolean, onClick: () -> Unit) {
     Box(
-        Modifier.clip(RoundedCornerShape(10.dp)).background(if (primary) C.honey.copy(alpha = 0.16f) else C.raised)
-            .clickable(onClick = onClick).padding(horizontal = 12.dp, vertical = 6.dp),
-    ) { Text(text, color = if (primary) C.honey else C.text, fontSize = 13.sp, fontWeight = FontWeight.Medium) }
+        Modifier.clip(RoundedCornerShape(12.dp)).background(if (primary) C.honey else C.raised)
+            .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
+    ) { Text(text, color = if (primary) C.onAccent else C.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
 }

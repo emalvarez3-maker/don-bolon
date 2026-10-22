@@ -72,6 +72,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
     var provider by remember { mutableStateOf(state.settings.provider) }
     var key by remember { mutableStateOf(model.secrets.get(state.settings.provider)) }
     var wipe by remember { mutableStateOf(false) }
+    var science by remember { mutableStateOf(false) }
 
     fun num(s: String) = s.replace(',', '.').toDoubleOrNull()
     val draft = p0.copy(
@@ -91,7 +92,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
         onClose()
     }
 
-    Column(Modifier.fillMaxSize().background(C.night).statusBarsPadding().navigationBarsPadding().imePadding()) {
+    Column(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding().imePadding()) {
         if (!onboarding) Row(Modifier.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClose) { Icon(Icons.Filled.Close, "Cerrar", tint = C.muted) }
             Text("Perfil", style = MaterialTheme.typography.titleMedium)
@@ -126,7 +127,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
             Gap(8.dp)
             Activity.entries.forEach { a ->
                 Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (a == activity) C.raised else C.night)
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(if (a == activity) C.raised else C.bg)
                         .clickable { activity = a }.padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -194,9 +195,9 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
                     )
                 }
                 if (t.floored) Text("No bajo de ${t.kcal} kcal: menos que eso no es seguro sin supervisión médica.", color = C.honey, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
-                Gap(14.dp)
-                Label("Por qué estos números")
-                t.why.forEach { w ->
+                Gap(6.dp)
+                QuietButton(if (science) "Ocultar la ciencia" else "¿Por qué estos números? ›", color = C.muted) { science = !science }
+                if (science) t.why.forEach { w ->
                     Gap(10.dp)
                     Text(w.text, fontSize = 13.sp)
                     Text(w.source, color = C.faint, fontSize = 11.sp)
@@ -238,7 +239,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
                     }
                     Switch(
                         state.settings.lock, { on -> model.store.edit { it.copy(settings = it.settings.copy(lock = on)) } },
-                        colors = SwitchDefaults.colors(checkedTrackColor = C.honey, checkedThumbColor = C.night),
+                        colors = SwitchDefaults.colors(checkedTrackColor = C.honey, checkedThumbColor = C.onAccent),
                     )
                 }
                 Gap(10.dp)

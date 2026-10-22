@@ -39,5 +39,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.biometric:biometric:1.1.0")
+    // biometric 1.1.0 drags in fragment 1.2, whose request codes break the camera and gallery launchers.
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
     implementation("com.anthropic:anthropic-java:2.34.0")
 }

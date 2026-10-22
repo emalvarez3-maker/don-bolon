@@ -139,7 +139,7 @@ private fun DrawScope.drawBolon(
     fun p(x: Float, y: Float) = Offset(x * u, y * u)
 
     // Shadow on the plate.
-    drawOval(Color.Black.copy(alpha = 0.35f), p(42f, 178f), Size(116 * u, 16 * u))
+    drawOval(Color(0xFF7A4316).copy(alpha = 0.14f), p(42f, 178f), Size(116 * u, 16 * u))
 
     // Stubby arms on the hips, behind the ball.
     rotate(-28f, p(36f, 128f)) { drawRoundRect(CrustDark, p(18f, 118f), Size(30 * u, 18 * u), CornerRadius(9 * u)) }
@@ -232,10 +232,10 @@ private fun DrawScope.drawBolon(
         Mood.ANGRY -> for (i in 0..2) {
             val t = (drift + i / 3f) % 1f
             val x = 70f + i * 30f
-            drawCircle(Color.White.copy(alpha = 0.35f * (1 - t)), (5 + 8 * t) * u, p(x + 6 * sin(t * 2 * PI.toFloat()), 36f - 30 * t))
+            drawCircle(Color(0xFFB8AA9A).copy(alpha = 0.45f * (1 - t)), (5 + 8 * t) * u, p(x + 6 * sin(t * 2 * PI.toFloat()), 36f - 30 * t))
         }
         Mood.SLEEPY -> {
-            val paint = Paint().apply { color = Color(0xFFF3EADF).toArgb(); isAntiAlias = true; typeface = Typeface.DEFAULT_BOLD }
+            val paint = Paint().apply { color = Color(0xFF9A8B7B).toArgb(); isAntiAlias = true; typeface = Typeface.DEFAULT_BOLD }
             for (i in 0..1) {
                 val t = (drift + i / 2f) % 1f
                 paint.alpha = ((1 - t) * 220).toInt()
@@ -245,12 +245,12 @@ private fun DrawScope.drawBolon(
         }
         Mood.THINKING -> for (i in 0..2) {
             val on = ((drift * 3).toInt() % 3) >= i
-            drawCircle(Color(0xFFF3EADF).copy(alpha = if (on) 0.9f else 0.25f), 4.5f * u, p(150f + i * 13, 26f))
+            drawCircle(Color(0xFF9A8B7B).copy(alpha = if (on) 0.9f else 0.3f), 4.5f * u, p(150f + i * 13, 26f))
         }
         Mood.PROUD -> for (i in 0..1) {
             // A wisp of fresh-out-of-the-pan steam.
             val t = (drift + i / 2f) % 1f
-            drawCircle(Color.White.copy(alpha = 0.18f * (1 - t)), (4 + 6 * t) * u, p(92f + i * 16 + 4 * sin(t * 6f), 38f - 24 * t))
+            drawCircle(Color(0xFFB8AA9A).copy(alpha = 0.3f * (1 - t)), (4 + 6 * t) * u, p(92f + i * 16 + 4 * sin(t * 6f), 38f - 24 * t))
         }
         else -> Unit
     }

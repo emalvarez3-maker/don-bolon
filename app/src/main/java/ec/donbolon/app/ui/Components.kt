@@ -79,7 +79,7 @@ fun Chip(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
     ) {
-        Text(text, color = if (selected) C.night else C.text, fontSize = 13.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+        Text(text, color = if (selected) C.onAccent else C.text, fontSize = 13.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
     }
 }
 
@@ -87,7 +87,7 @@ fun Chip(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick
 fun PrimaryButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
     Button(
         onClick, modifier.fillMaxWidth().height(54.dp), enabled = enabled, shape = RoundedCornerShape(16.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = C.honey, contentColor = C.night, disabledContainerColor = C.raised),
+        colors = ButtonDefaults.buttonColors(containerColor = C.honey, contentColor = C.onAccent, disabledContainerColor = C.raised),
     ) { Text(text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp) }
 }
 

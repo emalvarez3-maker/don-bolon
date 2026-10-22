@@ -86,6 +86,7 @@ private enum class Step { COMPOSE, THINKING, REVIEW }
  * The pre-meal hunger check is here on purpose: noticing *why* you eat is the habit.
  */
 @Composable
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -170,7 +171,7 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
 
     val emotional = reason?.physical == false && hunger <= 4f
 
-    Column(Modifier.fillMaxSize().background(C.night).statusBarsPadding().navigationBarsPadding().imePadding()) {
+    Column(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onDone) { Icon(Icons.Filled.Close, "Cerrar", tint = C.muted) }
             Text(if (step == Step.REVIEW) "Revisa y guarda" else "Registrar comida", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
@@ -290,20 +291,18 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                         }
                     }
                     Gap(14.dp)
-                    Panel {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("¿Cuánta hambre tienes?", Modifier.weight(1f), fontWeight = FontWeight.Medium)
-                            Text("${hunger.toInt()}/10", color = C.honey, fontWeight = FontWeight.SemiBold)
-                        }
-                        Slider(
-                            hunger, { hunger = it }, valueRange = 1f..10f, steps = 8,
-                            colors = SliderDefaults.colors(thumbColor = C.honey, activeTrackColor = C.honey, inactiveTrackColor = C.raised, activeTickColor = C.night, inactiveTickColor = C.line),
-                        )
-                        Text(hungerHint(hunger.toInt()), color = C.muted, fontSize = 12.sp)
+                    Label("¿Cuánta hambre tenías?")
+                    Gap(8.dp)
+                    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(3f to "Poca", 6f to "Normal", 8f to "Mucha").forEach { (v, l) -> Chip(l, hunger == v) { hunger = v; if (v > 3f) reason = null } }
+                        Chip("📵 Sin pantallas", mindful) { mindful = !mindful }
+                    }
+                    // Only when hunger was low is it worth asking why: that is where emotional eating hides.
+                    if (hunger <= 3f) {
                         Gap(12.dp)
-                        Text("¿Por qué vas a comer?", fontWeight = FontWeight.Medium)
+                        Text("Entonces, ¿por qué comes?", color = C.muted, fontSize = 13.sp)
                         Gap(8.dp)
-                        FlowChips(Reason.entries.map { it.label }, reason?.label) { l -> reason = Reason.entries.first { it.label == l }.takeIf { it != reason } }
+                        FlowChips(Reason.entries.filterNot { it.physical }.map { it.label }, reason?.label) { l -> reason = Reason.entries.first { it.label == l }.takeIf { it != reason } }
                     }
                     if (emotional && !nudged) {
                         Gap(12.dp)
@@ -315,21 +314,9 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                             }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                                 QuietButton("Igual voy a comer", color = C.muted) { nudged = true }
-                                QuietButton("3 minutos SOS") { onSos() }
+                                QuietButton("3 minutos") { onSos() }
                             }
                         }
-                    }
-                    Gap(10.dp)
-                    Row(
-                        Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable { mindful = !mindful }.padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            Modifier.size(22.dp).clip(RoundedCornerShape(6.dp)).background(if (mindful) C.honey else C.raised),
-                            contentAlignment = Alignment.Center,
-                        ) { if (mindful) Text("✓", color = C.night, fontSize = 13.sp) }
-                        HGap(10.dp)
-                        Text("Voy a comer sin pantallas y despacio", fontSize = 14.sp)
                     }
                     Gap(16.dp)
                 }

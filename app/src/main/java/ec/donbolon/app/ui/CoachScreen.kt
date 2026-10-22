@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
@@ -49,16 +52,14 @@ import kotlinx.coroutines.withContext
 import java.time.LocalDate
 
 private val quick = listOf(
-    "¿Qué ceno hoy?",
-    "Arma mi menú de mañana",
-    "Tengo antojo de dulce",
-    "Me pasé ayer, ¿qué hago?",
+    "¿Qué como ahora?",
+    "Arma mi día de mañana",
+    "Me pasé, ¿qué hago?",
     "¿Cómo voy esta semana?",
-    "Snack con proteína barato",
 )
 
 @Composable
-fun CoachScreen(model: AppModel, seed: String?, onSeedUsed: () -> Unit) {
+fun CoachScreen(model: AppModel, seed: String?, onSeedUsed: () -> Unit, onClose: () -> Unit, onSos: () -> Unit) {
     val state by model.store.state.collectAsState()
     val scope = rememberCoroutineScope()
     var input by remember { mutableStateOf("") }
@@ -89,10 +90,11 @@ fun CoachScreen(model: AppModel, seed: String?, onSeedUsed: () -> Unit) {
     LaunchedEffect(seed) { if (!seed.isNullOrBlank()) send(seed); onSeedUsed() }
     LaunchedEffect(state.chat.size, busy) { if (state.chat.isNotEmpty()) list.animateScrollToItem(state.chat.size) }
 
-    Column(Modifier.fillMaxSize().imePadding()) {
-        Row(Modifier.padding(horizontal = 20.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Bolon(if (busy) Mood.THINKING else Mood.GRUMPY, 64.dp, talking = busy, onPoke = {})
-            HGap(12.dp)
+    Column(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding().imePadding()) {
+        Row(Modifier.padding(start = 4.dp, end = 20.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClose) { Icon(Icons.Filled.Close, "Cerrar", tint = C.muted) }
+            Bolon(if (busy) Mood.THINKING else Mood.GRUMPY, 60.dp, talking = busy, onPoke = {})
+            HGap(10.dp)
             Column {
                 Text("Don Bolón", style = MaterialTheme.typography.titleLarge)
                 Text(if (busy) "pensando…" else "gruñón, pero de tu lado", color = C.muted, fontSize = 13.sp)
@@ -108,7 +110,10 @@ fun CoachScreen(model: AppModel, seed: String?, onSeedUsed: () -> Unit) {
         Row(
             Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) { quick.forEach { q -> Chip(q, false) { send(q) } } }
+        ) {
+            Chip("Tengo un antojo", false, onClick = onSos)
+            quick.forEach { q -> Chip(q, false) { send(q) } }
+        }
         Row(Modifier.padding(start = 16.dp, end = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Field(input, { input = it }, "Escríbele a Don Bolón", Modifier.weight(1f), singleLine = false)
             IconButton({ send(input) }, enabled = !busy) { Icon(Icons.AutoMirrored.Filled.Send, "Enviar", tint = if (busy) C.faint else C.honey) }

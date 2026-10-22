@@ -37,14 +37,14 @@ Don Bolón es una app Android para **comer con consciencia todos los días**: re
 | 📷 **Foto primero** | Tocas **+**, tomas la foto y el análisis arranca solo. La IA separa cada ingrediente, estima gramos, cuenta el aceite oculto y comprueba que `kcal ≈ 4·P + 4·C + 9·G`. Solo si algo que la foto no muestra cambia las calorías (¿frito o a la plancha?), te hace **una** pregunta y corrige. |
 | ✍️ **O descríbelo** | "120 g de verde majado, 1 huevo frito, café con leche" también funciona, con IA o sin ella, gracias a una libreta offline con comida ecuatoriana (bolón, encebollado, seco, menestra, ceviche…). |
 | ⬠ **Metas en un pentágono** | Perder grasa, ganar músculo, rendimiento, salud y flexibilidad, de 0 a 100. Arrastras las puntas y todo se recalcula: calorías, proteína, grasa, fibra, margen libre, días de fuerza y cardio. |
-| 🍽️ **Menú del día** | Un día completo que ya cuadra con tus números. "Lo comí" lo registra con un toque; "Cambiar" propone otro plato. |
+| 🍽️ **¿Qué como ahora?** | Una idea para tu próxima comida, ya cuadrada con lo que te queda del día. "Lo comí" la registra con un toque; "Otra idea" propone otra. |
 | ✅ **Constancia** | Cuatro hábitos diarios (registré, proteína, entrené, agua), racha hacia los 66 días de un hábito y peso suavizado para ver la tendencia real, no el agua del día. |
-| 🧠 **Mente** | Escala de hambre antes de comer, "¿por qué vas a comer?", SOS antojo de 3 minutos, planes Si-Entonces y una biblioteca con cada principio y su fuente. |
-| 🧀 **Don Bolón** | Respira, parpadea, se le escurre el queso, frunce el ceño, echa vapor cuando te pasas y se sonroja (a escondidas) cuando cumples. Si lo tocas, gruñe. |
+| 🧀 **Don Bolón te lo dice** | La ciencia no está pegada en la pantalla: él la trae cuando viene al caso (poca proteína, te pasaste, comiste por estrés, no has entrenado…). Toca su globo para ver el estudio, tócalo a él para hablarle. Si comiste sin hambre, te ofrece un SOS de 3 minutos para surfear el antojo. |
+| 🎨 **Personaje vivo** | Respira, parpadea, se le escurre el queso, frunce el ceño, echa vapor cuando te pasas y se sonroja (a escondidas) cuando cumples. Si lo tocas, gruñe. |
 
 ## La ciencia detrás de cada número
 
-Nada es inventado. La app muestra estas fuentes en **Perfil → Por qué estos números**.
+Nada es inventado. Don Bolón las cita cuando te da un consejo, y están en **Perfil → ¿Por qué estos números?**.
 
 | Qué | Cómo se calcula | Fuente |
 |---|---|---|
