@@ -54,6 +54,10 @@ object FoodDb {
         FoodRef("Morocho", 250.0, "1 vaso", 105.0, 3.0, 18.0, 2.5, 1.0, listOf("morocho")),
         FoodRef("Yuca cocida", 150.0, "1 trozo", 160.0, 1.4, 38.0, 0.3, 1.8, listOf("yuca")),
         FoodRef("Verde cocinado", 150.0, "1 verde", 120.0, 1.3, 31.0, 0.4, 2.3, listOf("verde cocinado", "platano verde")),
+        FoodRef("Verde majado", 150.0, "1 plato pequeño", 165.0, 2.5, 30.0, 4.5, 2.2, listOf("majado", "verde majado", "majado de verde")),
+        FoodRef("Tigrillo", 300.0, "1 plato", 175.0, 7.0, 20.0, 8.0, 1.8, listOf("tigrillo")),
+        FoodRef("Lomo en salsa", 150.0, "1 porción", 170.0, 20.0, 4.0, 8.5, 0.5, listOf("lomo en salsa", "lomo saltado", "carne en salsa", "carne guisada")),
+        FoodRef("Carne asada", 150.0, "1 porción", 230.0, 28.0, 0.0, 13.0, 0.0, listOf("carne asada", "asado", "parrillada")),
         // Proteins
         FoodRef("Pechuga de pollo a la plancha", 150.0, "1 filete", 165.0, 31.0, 0.0, 3.6, 0.0, listOf("pollo", "pechuga")),
         FoodRef("Pollo frito", 150.0, "1 presa", 260.0, 25.0, 9.0, 14.0, 0.4, listOf("pollo frito", "pollo broaster")),
@@ -62,7 +66,8 @@ object FoodDb {
         FoodRef("Pescado blanco", 150.0, "1 filete", 105.0, 23.0, 0.0, 1.2, 0.0, listOf("pescado", "tilapia", "corvina")),
         FoodRef("Atún en agua", 120.0, "1 lata escurrida", 116.0, 26.0, 0.0, 1.0, 0.0, listOf("atun")),
         FoodRef("Camarón cocido", 120.0, "1 porción", 99.0, 24.0, 0.2, 0.3, 0.0, listOf("camaron", "camarones")),
-        FoodRef("Huevo", 50.0, "1 huevo", 143.0, 12.6, 0.7, 9.5, 0.0, listOf("huevo", "huevos")),
+        FoodRef("Huevo", 50.0, "1 huevo", 143.0, 12.6, 0.7, 9.5, 0.0, listOf("huevo", "huevos", "huevo cocinado", "huevo duro")),
+        FoodRef("Huevo frito", 55.0, "1 huevo", 196.0, 13.6, 0.8, 15.0, 0.0, listOf("huevo frito", "huevos fritos")),
         FoodRef("Claras de huevo", 100.0, "3 claras", 52.0, 11.0, 0.7, 0.2, 0.0, listOf("clara", "claras")),
         FoodRef("Queso fresco", 40.0, "1 tajada", 260.0, 18.0, 3.0, 20.0, 0.0, listOf("queso")),
         FoodRef("Yogur griego natural", 170.0, "1 vaso", 73.0, 10.0, 3.9, 1.9, 0.0, listOf("yogur griego", "yogurt griego")),
@@ -129,15 +134,23 @@ object FoodDb {
      * find a known food in each piece, and use a leading number as the count of portions.
      */
     fun guess(description: String): List<FoodItem> {
-        val pieces = norm(description).split(Regex(",|\\by\\b|\\bcon\\b|\\+|\\n|;")).map { it.trim() }.filter { it.isNotEmpty() }
-        return pieces.mapNotNull { piece ->
-            val match = all.flatMap { f -> (f.aliases + norm(f.name)).map { a -> f to norm(a) } }
-                .filter { (_, a) -> piece.contains(a) }
-                .maxByOrNull { (_, a) -> a.length }?.first ?: return@mapNotNull null
-            val first = piece.split(" ").firstOrNull().orEmpty()
-            val count = first.replace(",", ".").toDoubleOrNull() ?: words[first] ?: 1.0
-            val grams = Regex("(\\d+)\\s*(g|gr|gramos)\\b").find(piece)?.groupValues?.get(1)?.toDoubleOrNull()
-            match.item(grams ?: match.portionG * count)
+        // "con" is not a separator: "café con leche" and "arroz con menestra" are single foods.
+        // Instead each piece is scanned for every food it names, longest names first.
+        val aliases = all.flatMap { f -> (f.aliases + f.name).map { a -> f to norm(a) } }.sortedByDescending { it.second.length }
+        val pieces = norm(description).split(Regex(",|\\by\\b|\\+|\\n|;")).map { it.trim() }.filter { it.isNotEmpty() }
+        return pieces.flatMap { piece ->
+            var rest = " $piece "
+            val found = mutableListOf<FoodItem>()
+            while (true) {
+                val (food, alias) = aliases.firstOrNull { (_, a) -> Regex("\\b${Regex.escape(a)}\\b").containsMatchIn(rest) } ?: break
+                val at = Regex("\\b${Regex.escape(alias)}\\b").find(rest)!!.range
+                val before = rest.substring(0, at.first).trim().split(" ").takeLast(3)
+                val grams = Regex("(\\d+)\\s*(g|gr|gramos)( de)?$").find(before.joinToString(" "))?.groupValues?.get(1)?.toDoubleOrNull()
+                val count = before.lastOrNull()?.let { it.replace(",", ".").toDoubleOrNull() ?: words[it] } ?: 1.0
+                found += food.item(grams ?: food.portionG * count)
+                rest = rest.removeRange(at)
+            }
+            found
         }
     }
 }

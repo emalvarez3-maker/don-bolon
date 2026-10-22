@@ -86,6 +86,34 @@ fun TodayScreen(model: AppModel, onProfile: () -> Unit, onAsk: (String) -> Unit)
                 }
             }
             Gap(12.dp)
+            val habits = Nutrition.habits(state, targets, today)
+            Panel(padding = 14.dp) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Constancia de hoy", fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
+                    Text("${habits.count { it.second }}/4", color = C.honey, fontWeight = FontWeight.SemiBold)
+                }
+                Gap(10.dp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    habits.forEach { (name, done) ->
+                        val tap = if (name == "Entrené") Modifier.clickable {
+                            model.store.edit { s -> s.copy(workouts = if (today in s.workouts) s.workouts - today else s.workouts + today) }
+                        } else Modifier
+                        Column(
+                            Modifier.weight(1f).clip(RoundedCornerShape(12.dp)).background(if (done) C.honey.copy(alpha = 0.16f) else C.raised).then(tap).padding(vertical = 10.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(if (done) "✓" else when (name) { "Registré" -> "📝"; "Proteína" -> "🥩"; "Entrené" -> "🏋️"; else -> "💧" }, fontSize = 16.sp, color = C.honey)
+                            Text(name, fontSize = 11.sp, color = if (done) C.text else C.muted)
+                        }
+                    }
+                }
+                Gap(8.dp)
+                Text(
+                    "Entrenos esta semana: ${Nutrition.workoutsThisWeek(state)} de ${state.profile.trainDays} · toca 🏋️ cuando entrenes",
+                    color = C.faint, fontSize = 12.sp,
+                )
+            }
+            Gap(12.dp)
             Panel(padding = 14.dp) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {

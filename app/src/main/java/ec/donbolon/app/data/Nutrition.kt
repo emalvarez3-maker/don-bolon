@@ -66,10 +66,20 @@ object Nutrition {
                 if (wanted > 500) capped = true
                 tdee + min(wanted, 500.0)
             }
+            // Recomposition: a small deficit (~15%, at most ~0.5% of body weight a week) plus
+            // strength training and high protein lets fat drop while muscle still grows
+            // (Barakat et al., 2020, Strength & Conditioning Journal).
+            Goal.DEFINIR -> {
+                val raw = tdee - min(tdee * 0.15, p.weightKg * 0.005 * 7700 / 7)
+                val floor = if (p.sex == Sex.HOMBRE) 1500.0 else 1200.0
+                if (raw < floor) floored = true
+                max(raw, floor)
+            }
         }
         val pw = proteinWeight(p)
         val proteinPerKg = when (p.goal) {
             Goal.BAJAR -> if (p.activity.ordinal >= Activity.MODERADO.ordinal) 2.2 else 1.8
+            Goal.DEFINIR -> 2.2
             Goal.SUBIR -> 2.0
             Goal.MANTENER -> 1.6
         }
@@ -110,6 +120,27 @@ object Nutrition {
         var n = 0
         while (d in days) { n++; d = d.minusDays(1) }
         return n
+    }
+
+    /**
+     * The four daily habits that build visible abs: log, hit protein, train (on training days
+     * the user plans), drink water. Small, checkable wins keep motivation going (Amabile &
+     * Kramer's progress principle; self-monitoring, Burke 2011).
+     */
+    fun habits(s: AppState, t: Targets, day: LocalDate): List<Pair<String, Boolean>> {
+        val totals = s.totalsOn(day)
+        return listOf(
+            "Registré" to s.mealsOn(day).isNotEmpty(),
+            "Proteína" to (totals.protein >= t.protein * 0.9),
+            "Entrené" to (day in s.workouts),
+            "Agua" to ((s.water[day] ?: 0) >= t.waterGlasses),
+        )
+    }
+
+    /** Workouts in the Monday-to-Sunday week that contains [day]. */
+    fun workoutsThisWeek(s: AppState, day: LocalDate = LocalDate.now()): Int {
+        val monday = day.minusDays((day.dayOfWeek.value - 1).toLong())
+        return s.workouts.count { it >= monday && it <= monday.plusDays(6) }
     }
 
     /** A day is "on target" within ±10% of the calorie goal: flexible, not all-or-nothing. */

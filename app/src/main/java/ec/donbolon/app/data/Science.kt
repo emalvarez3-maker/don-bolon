@@ -57,6 +57,12 @@ object Science {
             "Leidy et al. (2015), Am J Clin Nutr; Rolls (2009), Physiology & Behavior (densidad energética)",
         ),
         Principle(
+            "Cuadritos: recomposición",
+            "Con pesas, proteína alta (≈2.2 g/kg) y un déficit pequeño se puede perder grasa y ganar músculo al mismo tiempo, sobre todo si eres principiante o vuelves a entrenar. Los abdominales no queman la grasa local: la panza baja con el déficit total.",
+            "Entrena fuerza 3–5 veces por semana, progresa en peso o repeticiones y duerme 7–9 h.",
+            "Barakat et al. (2020), Strength & Conditioning Journal; Vispute et al. (2011), J Strength Cond Res",
+        ),
+        Principle(
             "Ultraprocesados: comes más sin notarlo",
             "En un ensayo controlado, la misma persona comió ~500 kcal más al día con ultraprocesados que con comida casera, aunque ambas dietas tenían iguales macros disponibles.",
             "Cuando puedas, elige el alimento que tu abuela reconocería.",
@@ -104,6 +110,9 @@ object Science {
                 Mood.GRUMPY to "Ayer te pasaste. ¿Y? Hoy se come normal, sin castigo. Gruño, pero no te voy a dejar compensar con hambre."
             meals.isEmpty() && now.hour >= 11 -> Mood.ANGRY to "¿Nada registrado todavía? Grrr. No te pido perfección, te pido una foto."
             meals.isEmpty() -> Mood.GRUMPY to "Hmpf. Buenos días, $name. Cuando comas algo, me lo enseñas. Yo vigilo."
+            state.profile.goal in listOf(Goal.DEFINIR, Goal.SUBIR) && today !in state.workouts && now.hour in 17..21 &&
+                Nutrition.workoutsThisWeek(state) < state.profile.trainDays ->
+                Mood.GRUMPY to "¿Y el entreno, $name? Los cuadritos se descubren en la cocina, pero se construyen con pesas. Llevas ${Nutrition.workoutsThisWeek(state)} de ${state.profile.trainDays} esta semana."
             left < -targets.kcal * 0.10 -> Mood.ANGRY to "Te pasaste ${(-left).toInt()} kcal. Respira. Una comida no decide nada; la siguiente que sea liviana y con proteína."
             Nutrition.onTarget(t.kcal, targets.kcal) && t.protein >= targets.protein * 0.9 ->
                 Mood.PROUD to "…Bien hecho. No te acostumbres a que lo diga. Calorías en rango Y proteína cumplida."
@@ -153,6 +162,7 @@ Comidas de hoy:
 $meals
 Kcal de los últimos 7 días (ayer primero): ${week.joinToString()}
 Comidas no-físicas esta semana: ${if (emotional.isEmpty()) "ninguna" else emotional.entries.joinToString { "${it.key} ×${it.value}" }}
+Entrenos de fuerza esta semana: ${Nutrition.workoutsThisWeek(state)} de ${p.trainDays} planeados${if (today in state.workouts) " (hoy entrenó)" else ""}
 Planes Si-Entonces: ${state.plans.joinToString(" | ") { "Si ${it.cue}, entonces ${it.action}" }.ifBlank { "ninguno" }}"""
     }
 }

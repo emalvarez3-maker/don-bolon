@@ -97,6 +97,8 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
     var description by rememberSaveable { mutableStateOf("") }
     var cooking by rememberSaveable { mutableStateOf<String?>(null) }
     var slot by rememberSaveable { mutableStateOf(Slot.forHour(LocalTime.now().hour)) }
+    var at by remember { mutableStateOf(LocalTime.now().withSecond(0).withNano(0)) }
+    var shots by remember { mutableStateOf(0) }
     var hunger by rememberSaveable { mutableStateOf(6f) }
     var reason by rememberSaveable { mutableStateOf<Reason?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -111,7 +113,10 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
     val camUri = remember { FileProvider.getUriForFile(context, "${context.packageName}.files", camFile) }
     fun accept(uri: Uri?) {
         External.open = false
-        if (uri != null) scope.launch { photo = withContext(Dispatchers.IO) { Images.load(context, uri) } }
+        if (uri != null) scope.launch {
+            photo = withContext(Dispatchers.IO) { Images.load(context, uri) }
+            if (photo != null) shots++
+        }
     }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> accept(if (ok) camUri else null) }
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { accept(it) }
@@ -140,6 +145,9 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         }
     }
 
+    // Photo first: as soon as a picture arrives, the analysis starts. The AI asks for words only if it needs them.
+    LaunchedEffect(shots) { if (shots > 0 && ai.available && step == Step.COMPOSE) runAnalysis() }
+
     fun offline() {
         items.clear(); items.addAll(FoodDb.guess(description))
         analysis = null
@@ -152,7 +160,7 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         val photoName = photo?.let { b -> "$id.jpg".also { Images.saveThumb(b, File(model.store.photos, it)) } }
         model.store.addMeal(
             Meal(
-                id = id, time = System.currentTimeMillis(), slot = slot, items = items.toList(), photo = photoName,
+                id = id, time = LocalDate.now().atTime(at).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli(), slot = slot, items = items.toList(), photo = photoName,
                 note = description, hunger = hunger.toInt(), reason = reason, mindful = mindful,
                 source = if (analysis == null) "libreta" else if (photo != null) "foto" else "texto",
             )
@@ -193,42 +201,6 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                 Gap(8.dp)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     cookings.forEach { c -> Chip(c, cooking == c) { cooking = if (cooking == c) null else c } }
-                }
-                Gap(16.dp)
-                Label("Momento")
-                Gap(8.dp)
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Slot.entries.forEach { s -> Chip("${s.emoji} ${s.label}", slot == s) { slot = s } }
-                }
-                Gap(20.dp)
-                Panel {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("¿Cuánta hambre tienes?", Modifier.weight(1f), fontWeight = FontWeight.Medium)
-                        Text("${hunger.toInt()}/10", color = C.honey, fontWeight = FontWeight.SemiBold)
-                    }
-                    Slider(
-                        hunger, { hunger = it }, valueRange = 1f..10f, steps = 8,
-                        colors = SliderDefaults.colors(thumbColor = C.honey, activeTrackColor = C.honey, inactiveTrackColor = C.raised, activeTickColor = C.night, inactiveTickColor = C.line),
-                    )
-                    Text(hungerHint(hunger.toInt()), color = C.muted, fontSize = 12.sp)
-                    Gap(12.dp)
-                    Text("¿Por qué vas a comer?", fontWeight = FontWeight.Medium)
-                    Gap(8.dp)
-                    FlowChips(Reason.entries.map { it.label }, reason?.label) { l -> reason = Reason.entries.first { it.label == l }.takeIf { it != reason } }
-                }
-                if (emotional && !nudged) {
-                    Gap(12.dp)
-                    Panel {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Bolon(Mood.GRUMPY, 54.dp)
-                            HGap(10.dp)
-                            Text("Hmpf. Eso suena a hambre de cabeza, no de panza. No te lo prohíbo: ¿probamos 3 minutos antes?", fontSize = 13.sp, modifier = Modifier.weight(1f))
-                        }
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            QuietButton("Igual voy a comer", color = C.muted) { nudged = true }
-                            QuietButton("3 minutos SOS") { onSos() }
-                        }
-                    }
                 }
                 error?.let {
                     Gap(12.dp)
@@ -298,6 +270,53 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                             Label("Para la próxima")
                             Gap(4.dp)
                             Text(it, fontSize = 14.sp)
+                        }
+                    }
+                    Gap(18.dp)
+                    Label("Momento")
+                    Gap(8.dp)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Slot.entries.forEach { s -> Chip("${s.emoji} ${s.label}", slot == s) { slot = s } }
+                    }
+                    Gap(10.dp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Hora", color = C.muted, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        // Steps land on :00 and :30 so earlier meals are quick to place.
+                        Stepper(
+                            onMinus = { at = if (at.minute % 30 != 0) at.withMinute(at.minute / 30 * 30) else at.minusMinutes(30); slot = Slot.forHour(at.hour) },
+                            onPlus = { at = if (at.minute % 30 != 0) at.withMinute(at.minute / 30 * 30).plusMinutes(30) else at.plusMinutes(30); slot = Slot.forHour(at.hour) },
+                        ) {
+                            Text("%02d:%02d".format(at.hour, at.minute), Modifier.padding(horizontal = 10.dp), fontWeight = FontWeight.SemiBold)
+                        }
+                    }
+                    Gap(14.dp)
+                    Panel {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("¿Cuánta hambre tienes?", Modifier.weight(1f), fontWeight = FontWeight.Medium)
+                            Text("${hunger.toInt()}/10", color = C.honey, fontWeight = FontWeight.SemiBold)
+                        }
+                        Slider(
+                            hunger, { hunger = it }, valueRange = 1f..10f, steps = 8,
+                            colors = SliderDefaults.colors(thumbColor = C.honey, activeTrackColor = C.honey, inactiveTrackColor = C.raised, activeTickColor = C.night, inactiveTickColor = C.line),
+                        )
+                        Text(hungerHint(hunger.toInt()), color = C.muted, fontSize = 12.sp)
+                        Gap(12.dp)
+                        Text("¿Por qué vas a comer?", fontWeight = FontWeight.Medium)
+                        Gap(8.dp)
+                        FlowChips(Reason.entries.map { it.label }, reason?.label) { l -> reason = Reason.entries.first { it.label == l }.takeIf { it != reason } }
+                    }
+                    if (emotional && !nudged) {
+                        Gap(12.dp)
+                        Panel {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Bolon(Mood.GRUMPY, 54.dp)
+                                HGap(10.dp)
+                                Text("Hmpf. Eso suena a hambre de cabeza, no de panza. No te lo prohíbo: ¿probamos 3 minutos antes?", fontSize = 13.sp, modifier = Modifier.weight(1f))
+                            }
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                QuietButton("Igual voy a comer", color = C.muted) { nudged = true }
+                                QuietButton("3 minutos SOS") { onSos() }
+                            }
                         }
                     }
                     Gap(10.dp)

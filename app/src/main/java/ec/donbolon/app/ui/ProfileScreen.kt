@@ -62,6 +62,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
     var goal by remember { mutableStateOf(p0.goal) }
     var rate by remember { mutableStateOf(p0.rateKgWeek) }
     var goalWeight by remember { mutableStateOf(p0.goalWeightKg?.fmt(1) ?: "") }
+    var trainDays by remember { mutableStateOf(p0.trainDays) }
     var provider by remember { mutableStateOf(state.settings.provider) }
     var key by remember { mutableStateOf(model.secrets.get(state.settings.provider)) }
     var wipe by remember { mutableStateOf(false) }
@@ -70,7 +71,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
     val draft = p0.copy(
         name = name.trim(), sex = sex, age = num(age)?.toInt()?.coerceIn(14, 100) ?: p0.age,
         heightCm = num(height)?.coerceIn(120.0, 230.0) ?: p0.heightCm, weightKg = num(weight)?.coerceIn(30.0, 300.0) ?: p0.weightKg,
-        activity = activity, goal = goal, rateKgWeek = rate, goalWeightKg = num(goalWeight), onboarded = true,
+        activity = activity, goal = goal, rateKgWeek = rate, goalWeightKg = num(goalWeight), trainDays = trainDays, onboarded = true,
     )
     val valid = num(age) != null && num(height) != null && num(weight) != null
     val t = Nutrition.targets(draft)
@@ -134,8 +135,23 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
             Gap(18.dp)
             Label("Objetivo")
             Gap(8.dp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { Goal.entries.forEach { g -> Chip(g.label, goal == g) { goal = g } } }
-            if (goal != Goal.MANTENER) {
+            FlowChips(Goal.entries.map { it.label }, goal.label) { l -> goal = Goal.entries.first { it.label == l } }
+            Gap(6.dp)
+            Text(goal.detail, color = C.muted, fontSize = 13.sp)
+            Gap(12.dp)
+            Text("Entrenos de fuerza por semana", color = C.muted, fontSize = 13.sp)
+            Gap(8.dp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                (2..6).forEach { d -> Chip("$d", trainDays == d) { trainDays = d } }
+            }
+            if (goal == Goal.DEFINIR) {
+                Gap(8.dp)
+                Text(
+                    "Los cuadritos aparecen con poca grasa (≈10–12% en hombres, 16–19% en mujeres) y músculo debajo. Los abdominales solos no queman la grasa de la panza: eso lo hace el déficit.",
+                    color = C.faint, fontSize = 12.sp,
+                )
+            }
+            if (goal == Goal.BAJAR || goal == Goal.SUBIR) {
                 Gap(12.dp)
                 Text("Ritmo por semana", color = C.muted, fontSize = 13.sp)
                 Gap(8.dp)
@@ -160,6 +176,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
                     "Metabolismo en reposo ${t.bmr} kcal (Mifflin–St Jeor) × actividad = gasto ${t.tdee} kcal. " +
                         when {
                             goal == Goal.MANTENER -> "Comes lo que gastas."
+                            goal == Goal.DEFINIR -> "Déficit suave de ${t.tdee - t.kcal} kcal (≈${(-t.weeklyChangeKg).fmt(2)} kg/semana) con ${t.protein} g de proteína: bajas grasa sin frenar el músculo, si entrenas pesas $trainDays veces por semana."
                             t.weeklyChangeKg < 0 -> "Déficit de ${t.tdee - t.kcal} kcal ≈ ${(-t.weeklyChangeKg).fmt(2)} kg/semana al inicio; luego se frena un poco, es normal."
                             else -> "Superávit de ${t.kcal - t.tdee} kcal para ganar músculo con poca grasa."
                         },

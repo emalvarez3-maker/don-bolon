@@ -96,8 +96,13 @@ class Store(private val context: Context) {
     fun addMeal(m: Meal) = edit { it.copy(meals = it.meals + m) }
 
     fun deleteMeal(id: String) {
-        state.value.meals.firstOrNull { it.id == id }?.photo?.let { File(photos, it).delete() }
-        edit { s -> s.copy(meals = s.meals.filterNot { it.id == id }) }
+        val meal = state.value.meals.firstOrNull { it.id == id } ?: return
+        meal.photo?.let { File(photos, it).delete() }
+        edit { s ->
+            // A meal logged from the daily menu goes back to "not eaten" there.
+            val menu = s.menu[meal.date]?.map { if (it.eaten && it.slot == meal.slot && it.title == meal.note) it.copy(eaten = false) else it }
+            s.copy(meals = s.meals.filterNot { it.id == id }, menu = if (menu == null) s.menu else s.menu + (meal.date to menu))
+        }
     }
 
     fun addWater(day: LocalDate, delta: Int) = edit { s ->

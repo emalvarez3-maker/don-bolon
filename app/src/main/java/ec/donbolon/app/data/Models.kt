@@ -8,7 +8,12 @@ import java.time.ZoneId
 
 enum class Sex { HOMBRE, MUJER }
 
-enum class Goal(val label: String) { BAJAR("Bajar grasa"), MANTENER("Mantener"), SUBIR("Ganar músculo") }
+enum class Goal(val label: String, val detail: String) {
+    DEFINIR("Marcar abdomen", "Bajar grasa y ganar músculo a la vez: déficit pequeño, mucha proteína y pesas"),
+    BAJAR("Bajar grasa", "Déficit más grande; prioridad: perder grasa"),
+    SUBIR("Ganar músculo", "Superávit pequeño para crecer con poca grasa"),
+    MANTENER("Mantener", "Comer lo que gastas"),
+}
 
 enum class Activity(val label: String, val detail: String, val factor: Double) {
     SEDENTARIO("Sedentario", "Oficina, casi sin ejercicio", 1.2),
@@ -52,13 +57,14 @@ data class Profile(
     val goal: Goal = Goal.BAJAR,
     val rateKgWeek: Double = 0.5,
     val goalWeightKg: Double? = null,
+    val trainDays: Int = 4,
     val onboarded: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("name", name).put("sex", sex.name).put("age", age).put("heightCm", heightCm)
         .put("weightKg", weightKg).put("activity", activity.name).put("goal", goal.name)
         .put("rateKgWeek", rateKgWeek).put("goalWeightKg", goalWeightKg ?: JSONObject.NULL)
-        .put("onboarded", onboarded)
+        .put("trainDays", trainDays).put("onboarded", onboarded)
 
     companion object {
         fun from(o: JSONObject) = Profile(
@@ -71,6 +77,7 @@ data class Profile(
             goal = enumOr(o.optString("goal"), Goal.BAJAR),
             rateKgWeek = o.optDouble("rateKgWeek", 0.5),
             goalWeightKg = if (o.isNull("goalWeightKg")) null else o.optDouble("goalWeightKg"),
+            trainDays = o.optInt("trainDays", 4),
             onboarded = o.optBoolean("onboarded"),
         )
     }
@@ -191,6 +198,7 @@ data class AppState(
     val settings: Settings = Settings(),
     val urgesSurfed: Int = 0,
     val menu: Map<LocalDate, List<PlannedMeal>> = emptyMap(),
+    val workouts: Set<LocalDate> = emptySet(),
 ) {
     fun mealsOn(day: LocalDate) = meals.filter { it.date == day }.sortedBy { it.time }
     fun totalsOn(day: LocalDate) = mealsOn(day).fold(Totals()) { t, m -> t + m.totals }
@@ -206,6 +214,7 @@ data class AppState(
         .put("chat", JSONArray(chat.takeLast(80).map { it.toJson() }))
         .put("settings", settings.toJson())
         .put("urgesSurfed", urgesSurfed)
+        .put("workouts", JSONArray(workouts.map { it.toString() }))
         .put("menu", JSONObject(menu.filterKeys { it >= LocalDate.now().minusDays(1) }.map { (d, ms) -> d.toString() to JSONArray(ms.map { it.toJson() }) }.toMap()))
 
     companion object {
@@ -220,6 +229,7 @@ data class AppState(
                 chat = o.optJSONArray("chat").objects().map(ChatMessage::from),
                 settings = o.optJSONObject("settings")?.let(Settings::from) ?: Settings(),
                 urgesSurfed = o.optInt("urgesSurfed"),
+                workouts = o.optJSONArray("workouts")?.let { a -> (0 until a.length()).map { LocalDate.parse(a.getString(it)) }.toSet() } ?: emptySet(),
                 menu = o.optJSONObject("menu")?.let { m -> m.keys().asSequence().associate { LocalDate.parse(it) to m.optJSONArray(it).objects().map(PlannedMeal::from) } } ?: emptyMap(),
             )
         }

@@ -208,7 +208,7 @@ Método:
 Responde SOLO con JSON válido, sin texto extra ni markdown, con esta forma exacta:
 {"items":[{"name":"nombre corto en español","grams":0,"kcal":0,"protein":0,"carbs":0,"fat":0,"fiber":0}],
  "confidence":"alta|media|baja",
- "question":"una pregunta corta si algo clave es ambiguo (p.ej. ¿frito o a la plancha?), o vacío",
+ "question":"UNA pregunta corta solo si algo que la foto no puede mostrar cambia las calorías en más de ~15% (¿frito o a la plancha?, ¿la bebida tiene azúcar?, ¿qué tiene adentro?, ¿cuánto queda en el plato?); si la foto basta, vacío",
  "verdict":"1-2 frases de Don Bolón, un bolón de queso gruñón pero cariñoso: comentario honesto del plato en relación con lo que le queda del día. Sin culpa ni vergüenza.",
  "better":"una mejora concreta y realista para la próxima vez (cambio, porción o acompañante), o vacío si el plato está muy bien"}
 Si la imagen no contiene comida, devuelve items vacío y explícalo en verdict."""
