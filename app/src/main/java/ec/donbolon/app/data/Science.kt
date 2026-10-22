@@ -155,7 +155,7 @@ object Science {
             Mood.GRUMPY, "Poca fibra hoy (${t.fiber.toInt()} g). Media porción de verduras o una fruta en la cena y listo.",
             "25–30 g de fibra se asocian a menos enfermedad (Reynolds et al., 2019)",
         )
-        if (now.hour >= 15 && water < targets.waterGlasses / 3) out += Tip(
+        if (now.hour in 15..20 && water < targets.waterGlasses / 3) out += Tip(
             Mood.GRUMPY, "Llevas $water vasos de agua. A veces la \"hambre\" de la tarde es sed. Toma uno y vuelve a preguntarte.",
         )
         if (streak in listOf(3, 7, 14, 21, 30, 45, 66) && meals.isNotEmpty()) out += Tip(

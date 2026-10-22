@@ -128,9 +128,9 @@ fun CalorieRing(eaten: Double, target: Int, size: Dp = 180.dp) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 "${kotlin.math.abs(left).roundToInt()}",
-                style = MaterialTheme.typography.displaySmall, color = if (left < 0) C.over else C.text,
+                style = MaterialTheme.typography.displaySmall, color = if (over) C.over else if (left < 0) C.good else C.text,
             )
-            Text(if (left >= 0) "kcal restantes" else "kcal de más", color = C.muted, fontSize = 13.sp)
+            Text(if (left >= 0) "kcal restantes" else if (over) "kcal de más" else "sobre la meta, en rango ✓", color = C.muted, fontSize = 13.sp)
             Spacer(Modifier.height(4.dp))
             Text("${eaten.roundToInt()} / $target", color = C.faint, fontSize = 12.sp)
         }
