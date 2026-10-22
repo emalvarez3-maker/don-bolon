@@ -63,6 +63,7 @@ import ec.donbolon.app.ai.AiException
 import ec.donbolon.app.ai.Analysis
 import ec.donbolon.app.data.Mood
 import ec.donbolon.app.data.FoodDb
+import ec.donbolon.app.data.Memory
 import ec.donbolon.app.data.FoodItem
 import ec.donbolon.app.data.Meal
 import ec.donbolon.app.data.Reason
@@ -91,7 +92,7 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val state by model.store.state.collectAsState()
-    val ai = remember { model.ai() }
+    var ai by remember { mutableStateOf(model.ai()) }
 
     var step by remember { mutableStateOf(Step.COMPOSE) }
     var photo by remember { mutableStateOf<Bitmap?>(null) }
@@ -132,7 +133,8 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         step = Step.THINKING
         scope.launch {
             try {
-                val context = Science.context(state, model.targets())
+                // The AI also gets this person's usual portions and past corrections, so it learns them.
+                val context = Science.context(state, model.targets()) + "\n" + Memory.forAnalysis(state)
                 val result = withContext(Dispatchers.IO) { ai.analyze(photo, description, cooking, context, previous, answer) }
                 analysis = result
                 items.clear(); items.addAll(result.items)
@@ -166,6 +168,10 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                 source = if (analysis == null) "libreta" else if (photo != null) "foto" else "texto",
             )
         )
+        analysis?.let { a ->
+            val fixes = Memory.corrections(a.items, items.toList())
+            if (fixes.isNotEmpty()) model.store.edit { it.copy(corrections = it.corrections + fixes) }
+        }
         onDone()
     }
 
@@ -190,6 +196,10 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
             }
 
             Step.COMPOSE -> Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
+                if (!ai.available) {
+                    ConnectAi(model) { ai = model.ai() }
+                    Gap(16.dp)
+                }
                 PhotoBox(photo, onCamera = ::shoot, onGallery = ::pick)
                 Gap(14.dp)
                 Field(description, { description = it }, "¿Qué es? (opcional, mejora la precisión)", singleLine = false, minLines = 2)
@@ -328,11 +338,11 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                 if (step == Step.COMPOSE) {
                     val canGo = photo != null || description.isNotBlank()
                     if (ai.available) {
-                        PrimaryButton(if (photo != null) "Analizar foto" else "Analizar descripción", enabled = canGo) { runAnalysis() }
-                        if (description.isNotBlank()) QuietButton("Usar solo la libreta (sin IA)", Modifier.align(Alignment.CenterHorizontally), color = C.muted) { offline() }
-                    } else {
-                        PrimaryButton("Buscar en la libreta", enabled = true) { offline() }
-                        Text("Configura una llave de IA en Perfil para analizar fotos.", color = C.faint, fontSize = 12.sp, modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 6.dp))
+                        PrimaryButton(if (error != null) "Reintentar con IA" else if (photo != null) "Analizar foto con IA" else "Analizar con IA", enabled = canGo) { runAnalysis() }
+                        // The notebook is only a lifeboat for when the AI can't be reached.
+                        if (error != null && description.isNotBlank()) QuietButton("Estimar con mi libreta mientras tanto", Modifier.align(Alignment.CenterHorizontally), color = C.muted) { offline() }
+                    } else if (description.isNotBlank()) {
+                        QuietButton("Estimar con mi libreta (menos preciso)", Modifier.align(Alignment.CenterHorizontally), color = C.muted) { offline() }
                     }
                 } else {
                     PrimaryButton("Guardar", enabled = items.isNotEmpty()) { save() }

@@ -39,7 +39,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ec.donbolon.app.AppModel
+import ec.donbolon.app.ai.Ai
 import ec.donbolon.app.ai.AiException
+import ec.donbolon.app.data.Memory
 import ec.donbolon.app.data.AppState
 import ec.donbolon.app.data.Mood
 import ec.donbolon.app.data.ChatMessage
@@ -75,14 +77,15 @@ fun CoachScreen(model: AppModel, seed: String?, onSeedUsed: () -> Unit, onClose:
             val s = model.store.state.value
             val targets = model.targets()
             val ai = model.ai()
-            val reply = if (!ai.available) localReply(text, s, targets) else try {
-                withContext(Dispatchers.IO) { ai.chat(Science.COACH_PERSONA + "\n\n" + Science.context(s, targets), s.chat) }
+            val reply = if (!ai.available) Ai.Reply(localReply(text, s, targets), emptyList()) else try {
+                withContext(Dispatchers.IO) { ai.coach(Science.COACH_PERSONA + "\n\n" + Science.context(s, targets), s.chat) }
             } catch (e: AiException) {
-                "Grrr, no pude pensar: ${e.message}\n\n" + localReply(text, s, targets)
+                Ai.Reply("Grrr, no pude pensar: ${e.message}\n\n" + localReply(text, s, targets), emptyList())
             } catch (e: Exception) {
-                "Grrr, algo falló. " + localReply(text, s, targets)
+                Ai.Reply("Grrr, algo falló. " + localReply(text, s, targets), emptyList())
             }
-            model.store.edit { it.copy(chat = it.chat + ChatMessage(false, reply)) }
+            // What he learned goes to long-term memory; the person can review it in Perfil.
+            model.store.edit { Memory.remember(it, reply.remember).copy(chat = it.chat + ChatMessage(false, reply.text)) }
             busy = false
         }
     }
@@ -116,7 +119,7 @@ fun CoachScreen(model: AppModel, seed: String?, onSeedUsed: () -> Unit, onClose:
         }
         Row(Modifier.padding(start = 16.dp, end = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Field(input, { input = it }, "Escríbele a Don Bolón", Modifier.weight(1f), singleLine = false)
-            IconButton({ send(input) }, enabled = !busy) { Icon(Icons.AutoMirrored.Filled.Send, "Enviar", tint = if (busy) C.faint else C.honey) }
+            IconButton({ send(input) }, enabled = !busy) { Icon(Icons.AutoMirrored.Filled.Send, "Enviar", tint = if (busy) C.faint else C.accent) }
         }
     }
 }
@@ -128,7 +131,7 @@ private fun Bubble(m: ChatMessage) {
             m.text,
             Modifier.widthIn(max = 300.dp)
                 .clip(RoundedCornerShape(18.dp))
-                .background(if (m.fromUser) C.honey.copy(alpha = 0.16f) else C.card)
+                .background(if (m.fromUser) C.accent.copy(alpha = 0.16f) else C.card)
                 .padding(horizontal = 14.dp, vertical = 10.dp),
             fontSize = 14.sp, lineHeight = 20.sp,
         )

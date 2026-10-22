@@ -75,7 +75,7 @@ fun Chip(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick
     Box(
         modifier
             .clip(CircleShape)
-            .background(if (selected) C.honey else C.raised)
+            .background(if (selected) C.accent else C.raised)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
     ) {
@@ -87,12 +87,12 @@ fun Chip(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick
 fun PrimaryButton(text: String, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
     Button(
         onClick, modifier.fillMaxWidth().height(54.dp), enabled = enabled, shape = RoundedCornerShape(16.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = C.honey, contentColor = C.onAccent, disabledContainerColor = C.raised),
+        colors = ButtonDefaults.buttonColors(containerColor = C.accent, contentColor = C.onAccent, disabledContainerColor = C.raised),
     ) { Text(text, fontWeight = FontWeight.SemiBold, fontSize = 16.sp) }
 }
 
 @Composable
-fun QuietButton(text: String, modifier: Modifier = Modifier, color: Color = C.honey, onClick: () -> Unit) {
+fun QuietButton(text: String, modifier: Modifier = Modifier, color: Color = C.accent, onClick: () -> Unit) {
     TextButton(onClick, modifier, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
         Text(text, color = color, fontWeight = FontWeight.Medium)
     }
@@ -105,7 +105,7 @@ fun Field(value: String, onChange: (String) -> Unit, label: String, modifier: Mo
         shape = RoundedCornerShape(14.dp),
         keyboardOptions = if (number) KeyboardOptions(keyboardType = KeyboardType.Decimal) else KeyboardOptions.Default,
         colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = C.honey, unfocusedBorderColor = C.line, focusedLabelColor = C.honey, cursorColor = C.honey,
+            focusedBorderColor = C.accent, unfocusedBorderColor = C.line, focusedLabelColor = C.accent, cursorColor = C.accent,
             focusedContainerColor = C.card, unfocusedContainerColor = C.card,
         ),
     )
@@ -123,7 +123,7 @@ fun CalorieRing(eaten: Double, target: Int, size: Dp = 180.dp) {
             val inset = w / 2
             val arc = Size(this.size.width - w, this.size.height - w)
             drawArc(C.raised, 135f, 270f, false, Offset(inset, inset), arc, style = Stroke(w, cap = StrokeCap.Round))
-            drawArc(if (over) C.over else C.honey, 135f, 270f * min(frac, 1f), false, Offset(inset, inset), arc, style = Stroke(w, cap = StrokeCap.Round))
+            drawArc(if (over) C.over else C.accent, 135f, 270f * min(frac, 1f), false, Offset(inset, inset), arc, style = Stroke(w, cap = StrokeCap.Round))
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(

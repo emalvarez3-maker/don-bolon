@@ -13,7 +13,7 @@
   <img alt="Android" src="https://img.shields.io/badge/Android-9%2B-3DDC84?logo=android&logoColor=white" />
   <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-Jetpack%20Compose-7F52FF?logo=kotlin&logoColor=white" />
   <img alt="IA" src="https://img.shields.io/badge/IA-Gemini%20%7C%20Claude-F2A93B" />
-  <img alt="Privacidad" src="https://img.shields.io/badge/datos-cifrados%20en%20tu%20tel%C3%A9fono-120E0B" />
+  <img alt="Privacidad" src="https://img.shields.io/badge/datos-cifrados%20en%20tu%20tel%C3%A9fono-111A17" />
 </p>
 
 ---
@@ -38,6 +38,7 @@ Don Bolón es una app Android para **comer con consciencia todos los días**: re
 | ✍️ **O descríbelo** | "120 g de verde majado, 1 huevo frito, café con leche" también funciona, con IA o sin ella, gracias a una libreta offline con comida ecuatoriana (bolón, encebollado, seco, menestra, ceviche…). |
 | ⬠ **Metas en un pentágono** | Perder grasa, ganar músculo, rendimiento, salud y flexibilidad, de 0 a 100. Arrastras las puntas y todo se recalcula: calorías, proteína, grasa, fibra, margen libre, días de fuerza y cardio. |
 | 🍽️ **¿Qué como ahora?** | Una idea para tu próxima comida, ya cuadrada con lo que te queda del día. "Lo comí" la registra con un toque; "Otra idea" propone otra. |
+| 🧠 **Memoria** | Don Bolón recuerda lo que le cuentas (gustos, horarios, lo que te cuesta), aprende tus porciones reales cada vez que corriges a la IA y cada lunes elige **un solo enfoque** para la semana a partir de tu hábito más flojo, con su plan Si-Entonces. Todo lo que sabe de ti lo ves y lo borras en Perfil. |
 | ✅ **Constancia** | Cuatro hábitos diarios (registré, proteína, entrené, agua), racha hacia los 66 días de un hábito y peso suavizado para ver la tendencia real, no el agua del día. |
 | 🧀 **Don Bolón te lo dice** | La ciencia no está pegada en la pantalla: él la trae cuando viene al caso (poca proteína, te pasaste, comiste por estrés, no has entrenado…). Toca su globo para ver el estudio, tócalo a él para hablarle. Si comiste sin hambre, te ofrece un SOS de 3 minutos para surfear el antojo. |
 | 🎨 **Personaje vivo** | Respira, parpadea, se le escurre el queso, frunce el ceño, echa vapor cuando te pasas y se sonroja (a escondidas) cuando cumples. Si lo tocas, gruñe. |
@@ -88,3 +89,14 @@ Kotlin · Jetpack Compose · Material 3 · Android Keystore · BiometricPrompt �
 ---
 
 <sub>Don Bolón es una guía educativa y no reemplaza a un médico o nutricionista. Si tienes una condición médica, estás embarazada o tienes historial de trastornos alimentarios, consulta a un profesional.</sub>
+
+## Colores con intención
+
+La paleta es oscura y vintage, y cada color tiene un trabajo según la psicología del color aplicada a la comida:
+
+| Color | Dónde | Por qué |
+|---|---|---|
+| Verde salvia | Fondo, botones, acciones | Lo verde se percibe fresco y saludable (Schuldt, 2013) |
+| Mostaza | Don Bolón, logros, proteína | Los amarillos y naranjas abren el apetito (Spence, 2015): se usan como premio, no de fondo |
+| Terracota | Solo cuando te pasas | El rojo funciona como señal de freno y reduce el picoteo (Genschow et al., 2012), suavizado para informar sin regañar |
+| Azul polvo | Agua y carbohidratos | Calma y no despierta el apetito |

@@ -1,0 +1,97 @@
+package ec.donbolon.app.ui
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import ec.donbolon.app.AppModel
+import ec.donbolon.app.ai.Ai
+import ec.donbolon.app.data.ChatMessage
+import ec.donbolon.app.data.Mood
+import ec.donbolon.app.data.Provider
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * Connects the AI that recognizes the food. The key is tried with a tiny request before it is
+ * saved (encrypted), so a typo shows up here and not in the middle of logging a meal.
+ */
+@Composable
+fun ConnectAi(model: AppModel, onConnected: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val uri = LocalUriHandler.current
+    var provider by remember { mutableStateOf(Provider.GEMINI) }
+    var key by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    Panel {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Bolon(if (busy) Mood.THINKING else Mood.GRUMPY, 56.dp, talking = busy)
+            HGap(10.dp)
+            Column(Modifier.weight(1f)) {
+                Text("Conecta mi cerebro", fontWeight = FontWeight.SemiBold)
+                Text("Para reconocer todo lo que comes en la foto necesito IA. Es gratis con Google.", color = C.muted, fontSize = 13.sp)
+            }
+        }
+        Gap(12.dp)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Chip("Gemini (gratis)", provider == Provider.GEMINI) { provider = Provider.GEMINI; error = null }
+            Chip("Claude", provider == Provider.CLAUDE) { provider = Provider.CLAUDE; error = null }
+        }
+        Gap(10.dp)
+        Text(
+            if (provider == Provider.GEMINI) "1. Abre Google AI Studio  2. Toca \"Create API key\"  3. Cópiala y pégala aquí."
+            else "1. Abre la consola de Anthropic  2. Crea una API key  3. Cópiala y pégala aquí.",
+            color = C.muted, fontSize = 12.sp,
+        )
+        QuietButton(if (provider == Provider.GEMINI) "Abrir Google AI Studio ↗" else "Abrir consola de Anthropic ↗") {
+            uri.openUri(if (provider == Provider.GEMINI) "https://aistudio.google.com/apikey" else "https://console.anthropic.com/settings/keys")
+        }
+        OutlinedTextField(
+            key, { key = it.trim(); error = null }, Modifier.fillMaxWidth(),
+            label = { Text("Pega tu llave aquí") }, singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+            shape = RoundedCornerShape(14.dp),
+            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.accent, unfocusedBorderColor = C.line, focusedLabelColor = C.accent, cursorColor = C.accent),
+        )
+        error?.let { Text(it, color = C.over, fontSize = 12.sp, modifier = Modifier.fillMaxWidth()) }
+        Gap(10.dp)
+        PrimaryButton(if (busy) "Probando…" else "Conectar", enabled = key.length >= 20 && !busy) {
+            busy = true
+            scope.launch {
+                val ok = runCatching {
+                    withContext(Dispatchers.IO) { Ai(provider, key).chat("Responde solo: ok", listOf(ChatMessage(true, "ok"))) }
+                }
+                busy = false
+                ok.onSuccess {
+                    model.secrets.set(provider, key)
+                    model.store.edit { it.copy(settings = it.settings.copy(provider = provider)) }
+                    onConnected()
+                }.onFailure { error = it.message ?: "No pude conectar. Revisa la llave." }
+            }
+        }
+        Text("Se guarda cifrada en tu teléfono y nunca sale de él, salvo hacia el proveedor cuando analizas una comida.", color = C.faint, fontSize = 11.sp)
+    }
+}

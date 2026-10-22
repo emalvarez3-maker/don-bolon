@@ -235,6 +235,9 @@ data class AppState(
     val urgesSurfed: Int = 0,
     val menu: Map<LocalDate, List<PlannedMeal>> = emptyMap(),
     val workouts: Set<LocalDate> = emptySet(),
+    val memories: List<MemoryNote> = emptyList(),
+    val corrections: List<Correction> = emptyList(),
+    val focus: Focus? = null,
 ) {
     fun mealsOn(day: LocalDate) = meals.filter { it.date == day }.sortedBy { it.time }
     fun totalsOn(day: LocalDate) = mealsOn(day).fold(Totals()) { t, m -> t + m.totals }
@@ -251,6 +254,9 @@ data class AppState(
         .put("settings", settings.toJson())
         .put("urgesSurfed", urgesSurfed)
         .put("workouts", JSONArray(workouts.map { it.toString() }))
+        .put("memories", JSONArray(memories.map { it.toJson() }))
+        .put("corrections", JSONArray(corrections.takeLast(200).map { it.toJson() }))
+        .put("focus", focus?.toJson() ?: JSONObject.NULL)
         .put("menu", JSONObject(menu.filterKeys { it >= LocalDate.now().minusDays(1) }.map { (d, ms) -> d.toString() to JSONArray(ms.map { it.toJson() }) }.toMap()))
 
     companion object {
@@ -267,6 +273,9 @@ data class AppState(
                 urgesSurfed = o.optInt("urgesSurfed"),
                 workouts = o.optJSONArray("workouts")?.let { a -> (0 until a.length()).map { LocalDate.parse(a.getString(it)) }.toSet() } ?: emptySet(),
                 menu = o.optJSONObject("menu")?.let { m -> m.keys().asSequence().associate { LocalDate.parse(it) to m.optJSONArray(it).objects().map(PlannedMeal::from) } } ?: emptyMap(),
+                memories = o.optJSONArray("memories").objects().map(MemoryNote::from),
+                corrections = o.optJSONArray("corrections").objects().map(Correction::from),
+                focus = o.optJSONObject("focus")?.let(Focus::from),
             )
         }
     }

@@ -96,6 +96,28 @@ class Ai(private val provider: Provider, private val key: String) {
         }.trim()
     }
 
+    /**
+     * A coach turn that also says what is worth remembering about the user long term, so
+     * Don Bolón builds a memory across conversations without a second request.
+     */
+    fun coach(system: String, history: List<ChatMessage>): Reply {
+        val turns = history.takeLast(20).map { Turn(it.fromUser, it.text, null) }.dropWhile { !it.user }
+        val full = system + "\n\n" + MEMORY_RULES
+        val raw = when (provider) {
+            Provider.GEMINI -> gemini(full, turns, json = true)
+            Provider.CLAUDE -> claude(full, turns, effort = BetaOutputConfig.Effort.LOW)
+            Provider.NINGUNO -> throw AiException("Sin IA configurada")
+        }
+        val start = raw.indexOf('{')
+        val end = raw.lastIndexOf('}')
+        val o = if (start >= 0 && end > start) runCatching { JSONObject(raw.substring(start, end + 1)) }.getOrNull() else null
+        if (o == null || o.optString("reply").isBlank()) return Reply(raw.trim(), emptyList())
+        val remember = o.optJSONArray("remember")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotBlank() } } ?: emptyList()
+        return Reply(o.optString("reply").trim(), remember)
+    }
+
+    data class Reply(val text: String, val remember: List<String>)
+
     private data class Turn(val user: Boolean, val text: String, val photo: Bitmap?)
 
     private fun jpeg(b: Bitmap): String {
@@ -213,7 +235,11 @@ Responde SOLO con JSON válido, sin texto extra ni markdown, con esta forma exac
  "better":"una mejora concreta y realista para la próxima vez (cambio, porción o acompañante), o vacío si el plato está muy bien"}
 Si la imagen no contiene comida, devuelve items vacío y explícalo en verdict."""
 
-        private const val MENU_SYSTEM = """Eres nutricionista y armas menús diarios para una persona en Ecuador, como lo hace la app Fitia: comida real, casera y fácil de conseguir en Ecuador (mercado, supermercado o un almuerzo típico), con porciones en gramos que cuadren con el presupuesto de calorías.
+        private const val MEMORY_RULES = """FORMATO DE RESPUESTA: responde SOLO con JSON válido, sin markdown:
+{"reply":"tu respuesta para la persona","remember":["dato nuevo y duradero sobre la persona"]}
+En "remember" pon solo cosas nuevas que valga la pena recordar por semanas (gustos, alimentos que no come, horarios, deporte, lesiones, metas, lo que le cuesta, lo que le funciona), en tercera persona y en una frase corta. Nada de lo que ya está en la MEMORIA DE LARGO PLAZO, nada del día a día ni de lo que comió hoy. Si no hay nada nuevo, deja la lista vacía."""
+
+        private const val MENU_SYSTEM ="""Eres nutricionista y armas menús diarios para una persona en Ecuador, como lo hace la app Fitia: comida real, casera y fácil de conseguir en Ecuador (mercado, supermercado o un almuerzo típico), con porciones en gramos que cuadren con el presupuesto de calorías.
 
 Reglas:
 - Prioriza proteína en cada comida (reparte la meta diaria), verduras o fruta, y almidones medidos (arroz, verde, papa, yuca, quinua, mote).

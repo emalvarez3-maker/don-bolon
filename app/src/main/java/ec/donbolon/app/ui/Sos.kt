@@ -70,8 +70,8 @@ fun SosScreen(model: AppModel, onClose: () -> Unit) {
             Gap(24.dp)
             Box(Modifier.size(240.dp), contentAlignment = androidx.compose.ui.Alignment.Center) {
                 Canvas(Modifier.size(240.dp)) {
-                    drawCircle(C.honey.copy(alpha = 0.10f), size.minDimension / 2)
-                    drawCircle(C.honey.copy(alpha = 0.28f), size.minDimension / 2 * grow)
+                    drawCircle(C.accent.copy(alpha = 0.10f), size.minDimension / 2)
+                    drawCircle(C.accent.copy(alpha = 0.28f), size.minDimension / 2 * grow)
                 }
                 Text(if (inhale) "inhala" else "exhala", fontSize = 18.sp, fontWeight = FontWeight.Medium)
             }

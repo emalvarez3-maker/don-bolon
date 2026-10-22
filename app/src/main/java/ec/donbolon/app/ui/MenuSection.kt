@@ -96,7 +96,7 @@ fun NextMeal(model: AppModel, state: AppState) {
                 Text("¿Qué como $moment?", color = C.muted, fontSize = 12.sp)
                 Text(plan?.title ?: "Te doy una idea que cuadra con tu día", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
             }
-            if (busy) CircularProgressIndicator(Modifier.size(18.dp), color = C.honey, strokeWidth = 2.dp)
+            if (busy) CircularProgressIndicator(Modifier.size(18.dp), color = C.accent, strokeWidth = 2.dp)
             else plan?.let { Text("${it.totals.kcal.fmt()} kcal", color = C.muted, fontSize = 13.sp) }
         }
         plan?.let { p ->
@@ -117,7 +117,7 @@ fun NextMeal(model: AppModel, state: AppState) {
 @Composable
 private fun SmallChip(text: String, primary: Boolean, onClick: () -> Unit) {
     Box(
-        Modifier.clip(RoundedCornerShape(12.dp)).background(if (primary) C.honey else C.raised)
+        Modifier.clip(RoundedCornerShape(12.dp)).background(if (primary) C.accent else C.raised)
             .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
     ) { Text(text, color = if (primary) C.onAccent else C.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
 }

@@ -120,6 +120,11 @@ object Science {
             Mood.SLEEPY, "Grrr… ya es tarde, $name. La cocina cerró. Dormir poco da más hambre mañana: agua y a la cama.",
             "Dormir mal sube la grelina y los antojos (Spiegel et al., 2004)",
         )
+        val focus = state.focus?.takeIf { it.weekStart == Memory.monday(today) }
+        if (focus != null && today.dayOfWeek == java.time.DayOfWeek.MONDAY) out += Tip(
+            Mood.PROUD, "${focus.review} Esta semana vamos por una sola cosa: ${focus.title.lowercase()}. ${focus.plan}",
+            "Una meta concreta rinde más que varias vagas (Locke & Latham, 2002)",
+        )
         if (meals.isEmpty() && yesterday > targets.kcal * 1.15) out += Tip(
             Mood.GRUMPY, "Ayer te pasaste. ¿Y? Hoy se come normal. Nada de compensar con hambre: eso es lo que trae el rebote.",
             "La autocompasión tras un desliz reduce comer de más (Adams & Leary, 2007)",
@@ -167,6 +172,10 @@ object Science {
             "Comer distraído aumenta lo que comes (Robinson et al., 2013)",
         )
         if (meals.isNotEmpty() && left > 0) out += Tip(Mood.GRUMPY, "Te quedan ${left.toInt()} kcal. Úsalas con cabeza, no con antojo.", null, Tip.Action.CHAT)
+        if (focus != null && today.dayOfWeek != java.time.DayOfWeek.MONDAY) out += Tip(
+            Mood.GRUMPY, "Recuerda el enfoque de la semana: ${focus.title.lowercase()}. ${focus.plan}",
+            "Planes Si-Entonces duplican la probabilidad de cumplir (Gollwitzer & Sheeran, 2006)",
+        )
         // Always end with one principle from the library, so there is something new each day.
         val p = tipOfDay()
         out += Tip(Mood.GRUMPY, "${p.title}. ${p.tryThis}", p.source)
@@ -213,7 +222,7 @@ $meals
 Kcal de los últimos 7 días (ayer primero): ${week.joinToString()}
 Comidas no-físicas esta semana: ${if (emotional.isEmpty()) "ninguna" else emotional.entries.joinToString { "${it.key} ×${it.value}" }}
 Entrenos de fuerza esta semana: ${Nutrition.workoutsThisWeek(state)} de ${p.trainDays} planeados${if (today in state.workouts) " (hoy entrenó)" else ""}
-Planes Si-Entonces: ${state.plans.joinToString(" | ") { "Si ${it.cue}, entonces ${it.action}" }.ifBlank { "ninguno" }}"""
+${Memory.forCoach(state, targets)}"""
     }
 }
 

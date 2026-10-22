@@ -120,7 +120,7 @@ private fun BottomBar(tab: Tab, onTab: (Tab) -> Unit, onCapture: () -> Unit) {
         ) {
             TabItem(Tab.HOY, tab, onTab)
             Box(
-                Modifier.shadow(6.dp, CircleShape).size(60.dp).clip(CircleShape).background(C.honey).clickable(onClick = onCapture),
+                Modifier.shadow(6.dp, CircleShape).size(60.dp).clip(CircleShape).background(C.accent).clickable(onClick = onCapture),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Filled.Add, "Registrar comida", tint = C.onAccent, modifier = Modifier.size(32.dp)) }
             TabItem(Tab.PROGRESO, tab, onTab)
@@ -136,7 +136,7 @@ private fun TabItem(t: Tab, current: Tab, onTab: (Tab) -> Unit) {
             .padding(horizontal = 22.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(t.icon, t.label, tint = if (on) C.honey else C.faint, modifier = Modifier.size(24.dp))
+        Icon(t.icon, t.label, tint = if (on) C.accent else C.faint, modifier = Modifier.size(24.dp))
         Text(t.label, fontSize = 11.sp, color = if (on) C.text else C.faint)
     }
 }

@@ -26,6 +26,7 @@ android {
         resources.excludes += setOf("META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/INDEX.LIST")
     }
     lint.abortOnError = false
+    testOptions.unitTests.isReturnDefaultValues = true
 }
 
 dependencies {
@@ -42,4 +43,8 @@ dependencies {
     // biometric 1.1.0 drags in fragment 1.2, whose request codes break the camera and gallery launchers.
     implementation("androidx.fragment:fragment-ktx:1.8.5")
     implementation("com.anthropic:anthropic-java:2.34.0")
+
+    testImplementation("junit:junit:4.13.2")
+    // Real org.json for JVM tests; the Android stub throws.
+    testImplementation("org.json:json:20240303")
 }

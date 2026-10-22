@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import ec.donbolon.app.data.Priorities
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -69,8 +70,8 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
     var rate by remember { mutableStateOf(p0.rateKgWeek) }
     var goalWeight by remember { mutableStateOf(p0.goalWeightKg?.fmt(1) ?: "") }
     var trainDays by remember { mutableStateOf(p0.trainDays) }
-    var provider by remember { mutableStateOf(state.settings.provider) }
-    var key by remember { mutableStateOf(model.secrets.get(state.settings.provider)) }
+    var aiOn by remember { mutableStateOf(model.ai().available) }
+    var changeKey by remember { mutableStateOf(false) }
     var wipe by remember { mutableStateOf(false) }
     var science by remember { mutableStateOf(false) }
 
@@ -84,10 +85,9 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
     val t = Nutrition.targets(draft)
 
     fun save() {
-        model.secrets.set(provider, key)
         model.store.edit { s ->
             val weights = if (onboarding && s.weights.isEmpty()) listOf(ec.donbolon.app.data.WeightEntry(java.time.LocalDate.now(), draft.weightKg)) else s.weights
-            s.copy(profile = draft, settings = s.settings.copy(provider = provider), weights = weights)
+            s.copy(profile = draft, weights = weights)
         }
         onClose()
     }
@@ -131,7 +131,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
                         .clickable { activity = a }.padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Dot(if (a == activity) C.honey else C.line, 10.dp)
+                    Dot(if (a == activity) C.accent else C.line, 10.dp)
                     HGap(12.dp)
                     Column {
                         Text(a.label, fontWeight = if (a == activity) FontWeight.SemiBold else FontWeight.Normal)
@@ -157,7 +157,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
                     Text(n, fontSize = 14.sp, modifier = Modifier.width(110.dp))
                     Slider(
                         prio.values[i].toFloat(), { prio = prio.with(i, it.toDouble()) }, Modifier.weight(1f),
-                        colors = SliderDefaults.colors(thumbColor = C.honey, activeTrackColor = C.honey, inactiveTrackColor = C.raised),
+                        colors = SliderDefaults.colors(thumbColor = C.accent, activeTrackColor = C.accent, inactiveTrackColor = C.raised),
                     )
                     Text("${(prio.values[i] * 100).toInt()}", color = C.muted, fontSize = 13.sp, modifier = Modifier.width(34.dp), textAlign = TextAlign.End)
                 }
@@ -184,7 +184,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
                 Label("Tu prescripción")
                 Gap(8.dp)
                 Row(verticalAlignment = Alignment.Bottom) {
-                    Text("${t.kcal}", style = MaterialTheme.typography.displaySmall, color = C.honey)
+                    Text("${t.kcal}", style = MaterialTheme.typography.displaySmall, color = C.accent)
                     Text("  kcal / día", color = C.muted, modifier = Modifier.padding(bottom = 8.dp))
                 }
                 Text("Proteína ${t.protein} g · Carbos ${t.carbs} g · Grasa ${t.fat} g · Fibra ${t.fiber} g", fontSize = 14.sp)
@@ -194,7 +194,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
                         color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp),
                     )
                 }
-                if (t.floored) Text("No bajo de ${t.kcal} kcal: menos que eso no es seguro sin supervisión médica.", color = C.honey, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                if (t.floored) Text("No bajo de ${t.kcal} kcal: menos que eso no es seguro sin supervisión médica.", color = C.accent, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
                 Gap(6.dp)
                 QuietButton(if (science) "Ocultar la ciencia" else "¿Por qué estos números? ›", color = C.muted) { science = !science }
                 if (science) t.why.forEach { w ->
@@ -207,25 +207,35 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
             Gap(22.dp)
             Label("Inteligencia artificial")
             Gap(8.dp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Provider.entries.forEach { pr -> Chip(when (pr) { Provider.GEMINI -> "Gemini"; Provider.CLAUDE -> "Claude"; Provider.NINGUNO -> "Sin IA" }, provider == pr) { provider = pr; key = model.secrets.get(pr) } }
-            }
-            Gap(8.dp)
-            if (provider != Provider.NINGUNO) {
-                OutlinedTextField(
-                    key, { key = it.trim() }, Modifier.fillMaxWidth(),
-                    label = { Text(if (provider == Provider.GEMINI) "Llave de Google AI Studio" else "Llave de Anthropic (sk-ant-…)") },
-                    singleLine = true, visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.honey, unfocusedBorderColor = C.line, focusedLabelColor = C.honey, cursorColor = C.honey),
-                )
-                Text(
-                    "Se guarda cifrada con el Keystore del teléfono. Solo se envía la foto y tu descripción al proveedor, por HTTPS, cuando tú pides un análisis.",
-                    color = C.faint, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp),
-                )
+            if (aiOn && !changeKey) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("✓ Conectado a ${if (state.settings.provider == Provider.CLAUDE) "Claude" else "Gemini"}", color = C.good, modifier = Modifier.weight(1f))
+                    QuietButton("Cambiar llave", color = C.muted) { changeKey = true }
+                }
             } else {
-                Text("Sin IA uso la libreta: escribes lo que comiste y busco los valores.", color = C.faint, fontSize = 12.sp)
+                ConnectAi(model) { aiOn = true; changeKey = false }
+            }
+
+            if (!onboarding) {
+                Gap(22.dp)
+                Label("Lo que Don Bolón sabe de ti")
+                Gap(6.dp)
+                if (state.memories.isEmpty()) {
+                    Text("Todavía nada. Cuéntale en el chat tus gustos, horarios o lo que te cuesta, y lo recordará.", color = C.faint, fontSize = 13.sp)
+                }
+                state.memories.forEach { m ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("· ${m.text}", fontSize = 14.sp, modifier = Modifier.weight(1f))
+                        IconButton({ model.store.edit { s -> s.copy(memories = s.memories.filterNot { it.id == m.id }) } }, Modifier.size(32.dp)) {
+                            Icon(Icons.Filled.Close, "Olvidar", tint = C.faint, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+                val learned = state.corrections.map { it.food.lowercase() }.distinct().size
+                if (learned > 0) Text("Ha aprendido tus porciones reales de $learned alimentos.", color = C.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                if (state.memories.isNotEmpty() || learned > 0) {
+                    QuietButton("Olvidar todo", color = C.over) { model.store.edit { it.copy(memories = emptyList(), corrections = emptyList()) } }
+                }
             }
 
             if (!onboarding) {
@@ -239,7 +249,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
                     }
                     Switch(
                         state.settings.lock, { on -> model.store.edit { it.copy(settings = it.settings.copy(lock = on)) } },
-                        colors = SwitchDefaults.colors(checkedTrackColor = C.honey, checkedThumbColor = C.onAccent),
+                        colors = SwitchDefaults.colors(checkedTrackColor = C.accent, checkedThumbColor = C.onAccent),
                     )
                 }
                 Gap(10.dp)

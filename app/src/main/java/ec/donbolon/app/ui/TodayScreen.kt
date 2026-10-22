@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ec.donbolon.app.AppModel
 import ec.donbolon.app.data.Meal
+import ec.donbolon.app.data.Memory
 import ec.donbolon.app.data.Nutrition
 import ec.donbolon.app.data.Science
 import ec.donbolon.app.data.Tip
@@ -66,6 +67,11 @@ fun TodayScreen(model: AppModel, go: (Overlay) -> Unit, ask: (String) -> Unit) {
     val totals = state.totalsOn(today)
     val meals = state.mealsOn(today)
     var open by remember { mutableStateOf<Meal?>(null) }
+    // A new week (or the first logged meal) picks a fresh focus from last week's weakest habit.
+    androidx.compose.runtime.LaunchedEffect(state.meals.size, Memory.monday(today)) {
+        val f = Memory.weeklyFocus(state, targets, today)
+        if (f != null && f.weekStart != state.focus?.weekStart) model.store.edit { it.copy(focus = f) }
+    }
 
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)) {
         item {
@@ -194,12 +200,12 @@ private fun Habits(model: AppModel, waterGoal: Int) {
 @Composable
 private fun Habit(icon: String, label: String, done: Boolean, modifier: Modifier, onTap: (() -> Unit)? = null) {
     Column(
-        modifier.clip(RoundedCornerShape(18.dp)).background(if (done) C.honey.copy(alpha = 0.14f) else C.card)
+        modifier.clip(RoundedCornerShape(18.dp)).background(if (done) C.gold.copy(alpha = 0.14f) else C.card)
             .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier).padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
-            Modifier.size(34.dp).clip(CircleShape).background(if (done) C.honey else C.raised),
+            Modifier.size(34.dp).clip(CircleShape).background(if (done) C.gold else C.raised),
             contentAlignment = Alignment.Center,
         ) { Text(if (done) "✓" else icon, fontSize = 15.sp, color = C.onAccent, fontWeight = FontWeight.Bold) }
         Gap(6.dp)

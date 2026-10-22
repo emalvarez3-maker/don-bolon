@@ -80,17 +80,17 @@ fun Pentagon(values: List<Double>, labels: List<String>, size: Dp = 260.dp, onCh
         val shape = Path()
         current.forEachIndexed { i, v -> val q = pt(i, v.coerceAtLeast(0.04)); if (i == 0) shape.moveTo(q.x, q.y) else shape.lineTo(q.x, q.y) }
         shape.close()
-        drawPath(shape, C.honey.copy(alpha = 0.22f))
-        drawPath(shape, C.honey, style = Stroke(2.5.dp.toPx()))
+        drawPath(shape, C.accent.copy(alpha = 0.22f))
+        drawPath(shape, C.accent, style = Stroke(2.5.dp.toPx()))
         current.forEachIndexed { i, v ->
-            drawCircle(if (i == active) C.text else C.honey, (if (i == active) 8 else 6).dp.toPx(), pt(i, v.coerceAtLeast(0.04)))
+            drawCircle(if (i == active) C.text else C.accent, (if (i == active) 8 else 6).dp.toPx(), pt(i, v.coerceAtLeast(0.04)))
         }
 
         // Labels just outside each corner, with the value.
         val paint = Paint().apply { isAntiAlias = true; textAlign = Paint.Align.CENTER; textSize = 12.dp.toPx() }
         labels.forEachIndexed { i, label ->
             val q = pt(i, 1.28)
-            paint.color = (if (i == active) C.honey else C.muted).toArgb()
+            paint.color = (if (i == active) C.accent else C.muted).toArgb()
             drawContext.canvas.nativeCanvas.drawText(label, q.x, q.y, paint)
             paint.color = C.text.toArgb()
             drawContext.canvas.nativeCanvas.drawText("${(current[i] * 100).toInt()}", q.x, q.y + 15.dp.toPx(), paint)

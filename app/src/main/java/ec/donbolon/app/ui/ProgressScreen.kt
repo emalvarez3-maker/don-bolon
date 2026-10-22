@@ -54,6 +54,19 @@ fun ProgressScreen(model: AppModel) {
             Text("Progreso", style = MaterialTheme.typography.headlineMedium)
             Gap(18.dp)
 
+            state.focus?.let { f ->
+                Panel {
+                    Label("Enfoque de la semana")
+                    Gap(6.dp)
+                    Text(f.title, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, color = C.gold)
+                    Gap(4.dp)
+                    Text(f.plan, fontSize = 14.sp)
+                    Gap(6.dp)
+                    Text(f.review, color = C.muted, fontSize = 12.sp)
+                }
+                Gap(12.dp)
+            }
+
             Panel {
                 Label("Últimos 7 días")
                 Gap(14.dp)
@@ -66,7 +79,7 @@ fun ProgressScreen(model: AppModel) {
                         val color = when {
                             k == 0.0 -> C.raised
                             k > targets.kcal * 1.1 -> C.over
-                            else -> C.honey
+                            else -> C.accent
                         }
                         drawRoundRect(color, Offset(i * slot + (slot - bw) / 2, size.height - max(h, 4f)), Size(bw, max(h, 4f)), CornerRadius(6f, 6f))
                     }
@@ -139,7 +152,7 @@ fun ProgressScreen(model: AppModel) {
                             val d = start.plusDays((row * 11 + col).toLong())
                             Dot(
                                 when {
-                                    d in loggedDays -> C.honey
+                                    d in loggedDays -> C.gold
                                     d.isAfter(today) -> C.raised.copy(alpha = 0.5f)
                                     else -> C.line
                                 },
@@ -176,6 +189,6 @@ private fun WeightChart(raw: List<Pair<LocalDate, Double>>, trend: List<Pair<Loc
         recent.forEach { (d, kg) -> drawCircle(C.muted.copy(alpha = 0.6f), 3.5f, Offset(x(d), y(kg))) }
         val path = Path()
         trend.filter { it.first >= from }.forEachIndexed { i, (d, kg) -> if (i == 0) path.moveTo(x(d), y(kg)) else path.lineTo(x(d), y(kg)) }
-        drawPath(path, C.honey, style = Stroke(4f, cap = StrokeCap.Round))
+        drawPath(path, C.accent, style = Stroke(4f, cap = StrokeCap.Round))
     }
 }
