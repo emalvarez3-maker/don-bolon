@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Grumpy bolón de queso, inside the 72dp safe zone of a 108dp adaptive icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#C9832F" android:pathData="M54,56m-30,0a30,28 0,1 1,60 0a30,28 0,1 1,-60 0" />
+    <path android:fillColor="#E9B158" android:pathData="M48,44m-14,0a14,10 0,1 1,28 0a14,10 0,1 1,-28 0" />
+    <path android:fillColor="#FFEDB0" android:pathData="M28,46 Q26,36 36,34 Q43,33 43,40 Q38,41 36,47 Q32,51 28,46Z" />
+    <path android:fillColor="#FFEDB0" android:pathData="M79,48 Q87,50 84,58 L84,64 Q82,68 80,64 L80,58 Q76,56 79,48Z" />
+    <path android:fillColor="#7A4316" android:pathData="M40,70m-2,0a2,1.5 0,1 1,4 0a2,1.5 0,1 1,-4 0" />
+    <path android:fillColor="#7A4316" android:pathData="M68,72m-2,0a2,1.5 0,1 1,4 0a2,1.5 0,1 1,-4 0" />
+    <path android:fillColor="#FFFFFF" android:pathData="M45,57m-4.5,0a4.5,5 0,1 1,9 0a4.5,5 0,1 1,-9 0" />
+    <path android:fillColor="#FFFFFF" android:pathData="M63,57m-4.5,0a4.5,5 0,1 1,9 0a4.5,5 0,1 1,-9 0" />
+    <path android:fillColor="#2A160A" android:pathData="M45,57.5m-2.8,0a2.8,3.4 0,1 1,5.6 0a2.8,3.4 0,1 1,-5.6 0" />
+    <path android:fillColor="#2A160A" android:pathData="M63,57.5m-2.8,0a2.8,3.4 0,1 1,5.6 0a2.8,3.4 0,1 1,-5.6 0" />
+    <path android:strokeColor="#2A160A" android:strokeWidth="3.4" android:strokeLineCap="round" android:pathData="M37,47 L50,51" />
+    <path android:strokeColor="#2A160A" android:strokeWidth="3.4" android:strokeLineCap="round" android:pathData="M71,47 L58,51" />
+    <path android:strokeColor="#2A160A" android:strokeWidth="2.4" android:strokeLineCap="round" android:pathData="M47,70 Q54,65 61,70" />
+</vector>
