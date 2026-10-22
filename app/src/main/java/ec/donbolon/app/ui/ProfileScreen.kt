@@ -44,6 +44,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import ec.donbolon.app.data.Priorities
 import ec.donbolon.app.data.Fasting
+import ec.donbolon.app.data.Fast
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -75,17 +76,20 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
     var changeKey by remember { mutableStateOf(false) }
     var wipe by remember { mutableStateOf(false) }
     var science by remember { mutableStateOf(false) }
-    var fasting by remember { mutableStateOf(p0.fasting) }
+    var windowHours by remember { mutableStateOf(p0.windowHours) }
+    var sleepHour by remember { mutableStateOf(p0.sleepHour) }
+    var showAdvice by remember { mutableStateOf(false) }
     var windowStart by remember { mutableStateOf(p0.windowStart) }
 
     fun num(s: String) = s.replace(',', '.').toDoubleOrNull()
     val draft = p0.copy(
         name = name.trim(), sex = sex, age = num(age)?.toInt()?.coerceIn(14, 100) ?: p0.age,
         heightCm = num(height)?.coerceIn(120.0, 230.0) ?: p0.heightCm, weightKg = num(weight)?.coerceIn(30.0, 300.0) ?: p0.weightKg,
-        activity = activity, goal = goal, priorities = prio, rateKgWeek = rate, goalWeightKg = num(goalWeight), trainDays = trainDays, fasting = fasting, windowStart = windowStart, onboarded = true,
+        activity = activity, goal = goal, priorities = prio, rateKgWeek = rate, goalWeightKg = num(goalWeight), trainDays = trainDays, windowHours = windowHours, windowStart = windowStart, sleepHour = sleepHour, onboarded = true,
     )
     val valid = num(age) != null && num(height) != null && num(weight) != null
     val t = Nutrition.targets(draft)
+    val advice = Fast.advise(state.copy(profile = draft))
 
     fun save() {
         model.store.edit { s ->
@@ -181,23 +185,50 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
             Text("★ lo que recomienda la evidencia para tus prioridades", color = C.faint, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
             Gap(12.dp)
             Gap(18.dp)
-            Label("Ayuno intermitente")
-            Gap(8.dp)
-            FlowChips(Fasting.entries.map { it.label }, fasting.label) { l -> fasting = Fasting.entries.first { it.label == l } }
-            Gap(6.dp)
-            Text(fasting.detail, color = C.muted, fontSize = 13.sp)
-            if (fasting != Fasting.NINGUNO) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Label("Ayuno intermitente")
+                    Text(if (windowHours in 1..23) "%d:%d · comes de %02d:00 a %02d:00".format(24 - windowHours, windowHours, windowStart, (windowStart + windowHours) % 24) else "Desactivado", color = C.muted, fontSize = 13.sp)
+                }
+                Switch(
+                    windowHours in 1..23, { on -> if (on) { windowStart = advice.start; windowHours = advice.hours } else windowHours = 0 },
+                    colors = SwitchDefaults.colors(checkedTrackColor = C.accent, checkedThumbColor = C.onAccent),
+                )
+            }
+            if (windowHours in 1..23) {
                 Gap(10.dp)
+                HourRow("Abre", windowStart) { windowStart = it }
+                HourRow("Cierra", (windowStart + windowHours) % 24) { end -> windowHours = ((end - windowStart + 24) % 24).coerceIn(4, 16) }
+                Gap(8.dp)
+                Text("Atajos", color = C.faint, fontSize = 12.sp)
+                Gap(6.dp)
+                FlowChips(Fasting.entries.drop(1).map { it.label }, Fasting.entries.firstOrNull { it.windowHours == windowHours }?.label) { l ->
+                    windowHours = Fasting.entries.first { it.label == l }.windowHours
+                }
+            }
+            HourRow("Me duermo a las", sleepHour) { sleepHour = it }
+
+            // The evidence-based suggestion, built from bedtime and the hours they already eat.
+            Gap(10.dp)
+            Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(C.card).padding(14.dp)) {
+                Text("Recomendado para ti", color = C.gold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text(
+                    "%d:%d · de %02d:00 a %02d:00".format(24 - advice.hours, advice.hours, advice.start, advice.end),
+                    fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
+                )
+                if (showAdvice) advice.why.forEach { w ->
+                    Gap(8.dp)
+                    Text(w.text, fontSize = 13.sp)
+                    Text(w.source, color = C.faint, fontSize = 11.sp)
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Tu ventana abre a las", color = C.muted, fontSize = 14.sp, modifier = Modifier.weight(1f))
-                    Stepper({ windowStart = (windowStart + 23) % 24 }, { windowStart = (windowStart + 1) % 24 }) {
-                        Text("%02d:00".format(windowStart), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 10.dp))
+                    QuietButton(if (showAdvice) "Ocultar" else "¿Por qué?", color = C.muted) { showAdvice = !showAdvice }
+                    Box(Modifier.weight(1f))
+                    val using = windowHours == advice.hours && windowStart == advice.start
+                    QuietButton(if (using) "✓ En uso" else "Usar esta ventana", color = if (using) C.good else C.accent) {
+                        windowStart = advice.start; windowHours = advice.hours
                     }
                 }
-                Text(
-                    "Comes de %02d:00 a %02d:00. Te sugiero comidas solo dentro de esa ventana.".format(windowStart, (windowStart + fasting.windowHours) % 24),
-                    color = C.faint, fontSize = 12.sp,
-                )
             }
             Gap(12.dp)
             Field(goalWeight, { goalWeight = it }, "Peso meta kg (opcional)", number = true)
@@ -320,5 +351,15 @@ private fun SettingSwitch(title: String, detail: String, on: Boolean, onChange: 
             Text(detail, color = C.faint, fontSize = 12.sp)
         }
         Switch(on, onChange, colors = SwitchDefaults.colors(checkedTrackColor = C.accent, checkedThumbColor = C.onAccent))
+    }
+}
+
+@Composable
+private fun HourRow(label: String, hour: Int, onChange: (Int) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 3.dp)) {
+        Text(label, color = C.muted, fontSize = 14.sp, modifier = Modifier.weight(1f))
+        Stepper({ onChange((hour + 23) % 24) }, { onChange((hour + 1) % 24) }) {
+            Text("%02d:00".format(hour), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 10.dp))
+        }
     }
 }

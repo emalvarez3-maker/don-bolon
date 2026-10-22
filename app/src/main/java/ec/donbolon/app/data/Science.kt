@@ -243,7 +243,7 @@ $meals
 Kcal de los últimos 7 días (ayer primero): ${week.joinToString()}
 Comidas no-físicas esta semana: ${if (emotional.isEmpty()) "ninguna" else emotional.entries.joinToString { "${it.key} ×${it.value}" }}
 Entrenos de fuerza esta semana: ${Nutrition.workoutsThisWeek(state)} de ${p.trainDays} planeados${if (today in state.workouts) " (hoy entrenó)" else ""}
-Ayuno intermitente: ${if (p.fasting == Fasting.NINGUNO) "no hace" else "${p.fasting.label}, ventana de ${Fast.opens(p)} a ${Fast.closes(p)}; sugiere comidas solo dentro de esa ventana"}
+Ayuno intermitente: ${if (!p.fasting) "no hace" else "${p.fastLabel}, ventana de ${Fast.opens(p)} a ${Fast.closes(p)}; sugiere comidas solo dentro de esa ventana"}
 ${Memory.forCoach(state, targets)}"""
     }
 }

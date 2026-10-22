@@ -105,7 +105,7 @@ fun TodayScreen(model: AppModel, go: (Overlay) -> Unit, ask: (String) -> Unit) {
                 }
             }
             Gap(12.dp)
-            if (state.profile.fasting != ec.donbolon.app.data.Fasting.NINGUNO) {
+            if (state.profile.windowHours in 1..23) {
                 FastingCard(state)
                 Gap(12.dp)
             }

@@ -92,8 +92,10 @@ data class Profile(
     val rateKgWeek: Double = 0.5,
     val goalWeightKg: Double? = null,
     val trainDays: Int = 4,
-    val fasting: Fasting = Fasting.NINGUNO,
+    /** Hours of the eating window; 0 = not fasting. Any length works, the presets are only shortcuts. */
+    val windowHours: Int = 0,
     val windowStart: Int = 12,
+    val sleepHour: Int = 23,
     val priorities: Priorities = goal.priorities,
     val onboarded: Boolean = false,
 ) {
@@ -101,7 +103,7 @@ data class Profile(
         .put("name", name).put("sex", sex.name).put("age", age).put("heightCm", heightCm)
         .put("weightKg", weightKg).put("activity", activity.name).put("goal", goal.name)
         .put("rateKgWeek", rateKgWeek).put("goalWeightKg", goalWeightKg ?: JSONObject.NULL)
-        .put("trainDays", trainDays).put("fasting", fasting.name).put("windowStart", windowStart)
+        .put("trainDays", trainDays).put("windowHours", windowHours).put("windowStart", windowStart).put("sleepHour", sleepHour)
         .put("priorities", priorities.toJson()).put("onboarded", onboarded)
 
     companion object {
@@ -116,7 +118,10 @@ data class Profile(
             rateKgWeek = o.optDouble("rateKgWeek", 0.5),
             goalWeightKg = if (o.isNull("goalWeightKg")) null else o.optDouble("goalWeightKg"),
             trainDays = o.optInt("trainDays", 4),
-            fasting = enumOr(o.optString("fasting"), Fasting.NINGUNO),
+            // Older diaries stored a preset name instead of the window length.
+            windowHours = if (o.has("windowHours")) o.optInt("windowHours").coerceIn(0, 23)
+            else enumOr(o.optString("fasting"), Fasting.NINGUNO).let { if (it == Fasting.NINGUNO) 0 else it.windowHours },
+            sleepHour = o.optInt("sleepHour", 23).coerceIn(0, 23),
             windowStart = o.optInt("windowStart", 12).coerceIn(0, 23),
             priorities = o.optJSONObject("priorities")?.let(Priorities::from) ?: enumOr(o.optString("goal"), Goal.BAJAR).priorities,
             onboarded = o.optBoolean("onboarded"),

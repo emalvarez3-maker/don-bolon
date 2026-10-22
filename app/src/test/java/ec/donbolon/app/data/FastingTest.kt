@@ -13,7 +13,7 @@ import java.time.LocalTime
 import java.time.ZoneId
 
 class FastingTest {
-    private val p168 = Profile(fasting = Fasting.F16, windowStart = 12)
+    private val p168 = Profile(windowHours = 8, windowStart = 12)
 
     @Test fun sixteenEightWindowIsNoonToEight() {
         assertTrue(Fast.inWindow(p168, LocalTime.of(12, 0)))
@@ -22,8 +22,38 @@ class FastingTest {
         assertFalse(Fast.inWindow(p168, LocalTime.of(8, 0)))
     }
 
+    @Test fun estebansWindowIsNoonToSeven() {
+        val p = Profile(windowHours = 7, windowStart = 12)
+        assertEquals(LocalTime.of(19, 0), Fast.closes(p))
+        assertTrue(Fast.inWindow(p, LocalTime.of(18, 59)))
+        assertFalse(Fast.inWindow(p, LocalTime.of(19, 30)))
+        assertEquals(listOf(Slot.ALMUERZO, Slot.SNACK), Fast.slots(p))
+    }
+
+    @Test fun adviceClosesThreeHoursBeforeSleepAndStartsWhenTheyEat() {
+        val today = LocalDate.now()
+        val lunch = (1..5).map { d ->
+            Meal("m$d", today.minusDays(d.toLong()).atTime(12, 10).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), Slot.ALMUERZO,
+                listOf(FoodItem("Arroz", 100.0, 130.0, 3.0, 28.0, 0.3)))
+        }
+        val a = Fast.advise(AppState(profile = Profile(sleepHour = 23), meals = lunch))
+        assertEquals(12, a.start)
+        assertEquals(8, a.hours)
+        assertEquals(20, a.end)
+        // Someone who eats from 6 am gets the window trimmed to 10 h, still ending 3 h before bed.
+        val early = Fast.advise(AppState(profile = Profile(sleepHour = 22, windowHours = 13, windowStart = 6)))
+        assertEquals(19, early.end)
+        assertEquals(10, early.hours)
+    }
+
+    @Test fun oldDiariesWithAPresetNameKeepTheirWindow() {
+        val p = Profile.from(org.json.JSONObject().put("fasting", "F16").put("windowStart", 12))
+        assertEquals(8, p.windowHours)
+        assertTrue(p.fasting)
+    }
+
     @Test fun windowCanCrossMidnight() {
-        val p = Profile(fasting = Fasting.F16, windowStart = 20) // 20:00 → 04:00
+        val p = Profile(windowHours = 8, windowStart = 20) // 20:00 → 04:00
         assertTrue(Fast.inWindow(p, LocalTime.of(23, 0)))
         assertTrue(Fast.inWindow(p, LocalTime.of(2, 0)))
         assertFalse(Fast.inWindow(p, LocalTime.of(12, 0)))
@@ -62,14 +92,14 @@ class ReminderTest {
     private val now = LocalDateTime.of(2026, 10, 22, 10, 5)
 
     @Test fun nextReminderIsTheEarliestUpcoming() {
-        val s = AppState(profile = Profile(fasting = Fasting.F16, windowStart = 12))
+        val s = AppState(profile = Profile(windowHours = 8, windowStart = 12))
         val (at, kind) = Reminders.next(s, now)!!
         assertEquals(LocalDateTime.of(2026, 10, 22, 11, 0), at)
         assertEquals(Reminders.Kind.WATER, kind)
     }
 
     @Test fun fastingRemindersFollowTheWindow() {
-        val s = AppState(profile = Profile(fasting = Fasting.F16, windowStart = 12), settings = Settings(waterReminders = false))
+        val s = AppState(profile = Profile(windowHours = 8, windowStart = 12), settings = Settings(waterReminders = false))
         assertEquals(LocalDateTime.of(2026, 10, 22, 12, 0) to Reminders.Kind.FAST_OPEN, Reminders.next(s, now))
         assertEquals(LocalDateTime.of(2026, 10, 22, 19, 0) to Reminders.Kind.FAST_CLOSING, Reminders.next(s, LocalDateTime.of(2026, 10, 22, 12, 30)))
     }

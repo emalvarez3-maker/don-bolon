@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ec.donbolon.app.data.AppState
 import ec.donbolon.app.data.Fast
+import ec.donbolon.app.data.fastLabel
 import kotlinx.coroutines.delay
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
@@ -36,7 +37,7 @@ fun FastingCard(state: AppState) {
     LaunchedEffect(Unit) { while (true) { delay(30_000); now = LocalDateTime.now() } }
     val f = Fast.state(state, now) ?: return
     val p = state.profile
-    val total = if (f.eating) p.fasting.windowHours * 60.0 else p.fasting.fastHours * 60.0
+    val total = if (f.eating) p.windowHours * 60.0 else (24 - p.windowHours) * 60.0
     val done = if (f.eating) total - f.minutesToChange else (f.hoursFasted * 60).coerceAtMost(total)
     val frac by animateFloatAsState((done / total).toFloat().coerceIn(0f, 1f), tween(700), label = "fast")
     val color = if (f.eating) C.accent else C.water
@@ -64,7 +65,7 @@ fun FastingCard(state: AppState) {
                     else "Tu ventana abre a las ${f.opens.format(hm)} · en ${Fast.format(f.minutesToChange)}",
                     color = C.muted, fontSize = 13.sp,
                 )
-                Text("${p.fasting.label} · agua, café negro y té no lo rompen", color = C.faint, fontSize = 11.sp)
+                Text("${p.fastLabel} · agua, café negro y té no lo rompen", color = C.faint, fontSize = 11.sp)
             }
         }
     }

@@ -15,7 +15,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import ec.donbolon.app.data.AppState
 import ec.donbolon.app.data.Fast
-import ec.donbolon.app.data.Fasting
+import ec.donbolon.app.data.fasting
 import ec.donbolon.app.data.Nutrition
 import ec.donbolon.app.data.Store
 import java.time.LocalDate
@@ -41,7 +41,7 @@ object Reminders {
         val out = mutableListOf<Pair<LocalDateTime, Kind>>()
         for (day in listOf(now.toLocalDate(), now.toLocalDate().plusDays(1))) {
             if (s.settings.waterReminders) waterHours.forEach { out += day.atTime(it, 0) to Kind.WATER }
-            if (s.settings.fastReminders && s.profile.fasting != Fasting.NINGUNO) {
+            if (s.settings.fastReminders && s.profile.fasting) {
                 out += day.atTime(Fast.opens(s.profile)) to Kind.FAST_OPEN
                 out += day.atTime(Fast.closes(s.profile)).minusHours(1) to Kind.FAST_CLOSING
             }

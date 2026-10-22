@@ -96,7 +96,7 @@ private fun Shell(model: AppModel) {
 
     // Reminders follow the settings: book the next one now, and ask for permission once (Android 13+).
     val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.schedule(context) }
-    LaunchedEffect(state.settings.waterReminders, state.settings.fastReminders, state.profile.fasting, state.profile.windowStart) {
+    LaunchedEffect(state.settings.waterReminders, state.settings.fastReminders, state.profile.windowHours, state.profile.windowStart) {
         Reminders.schedule(context)
         val wants = state.settings.waterReminders || state.settings.fastReminders
         if (wants && Build.VERSION.SDK_INT >= 33 &&
