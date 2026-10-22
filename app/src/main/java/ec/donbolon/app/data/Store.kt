@@ -68,8 +68,18 @@ class Secrets(context: Context) {
     }
 }
 
-/** The whole diary in one encrypted JSON file; small enough to rewrite on every change. */
-class Store(private val context: Context) {
+/**
+ * The whole diary in one encrypted JSON file; small enough to rewrite on every change.
+ * One instance per process ([get]) so the app and the notification actions share it.
+ */
+class Store private constructor(private val context: Context) {
+    companion object {
+        @Volatile private var instance: Store? = null
+        fun get(context: Context): Store = instance ?: synchronized(this) {
+            instance ?: Store(context.applicationContext).also { instance = it }
+        }
+    }
+
     private val file = File(context.filesDir, "diario.bin")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val writeLock = Mutex()
@@ -83,13 +93,22 @@ class Store(private val context: Context) {
 
     fun edit(change: (AppState) -> AppState) {
         _state.update(change)
-        val snapshot = _state.value
         scope.launch {
             writeLock.withLock {
+                // Always write the newest state: saves can start out of order, the file must not go back in time.
                 val tmp = File(file.path + ".tmp")
-                tmp.writeBytes(Vault.seal(snapshot.toJson().toString().toByteArray()))
+                tmp.writeBytes(Vault.seal(_state.value.toJson().toString().toByteArray()))
                 tmp.renameTo(file)
             }
+        }
+    }
+
+    /** Writes the current state on this thread; for broadcast receivers that may be killed right after. */
+    fun saveNow() = kotlinx.coroutines.runBlocking {
+        writeLock.withLock {
+            val tmp = File(file.path + ".tmp")
+            tmp.writeBytes(Vault.seal(_state.value.toJson().toString().toByteArray()))
+            tmp.renameTo(file)
         }
     }
 

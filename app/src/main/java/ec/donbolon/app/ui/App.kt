@@ -1,6 +1,14 @@
 package ec.donbolon.app.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
+import ec.donbolon.app.Reminders
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -51,6 +59,11 @@ import ec.donbolon.app.data.Mood
 /** Set while the camera or gallery is in front, so leaving for them doesn't lock the diary. */
 object External {
     @Volatile var open = false
+
+    // When the camera closes on the press of "back", the release can land on us; ignore it for a moment.
+    @Volatile var returnedAt = 0L
+    fun back() { open = false; returnedAt = System.currentTimeMillis() }
+    fun justReturned() = System.currentTimeMillis() - returnedAt < 800
 }
 
 enum class Tab(val label: String, val icon: ImageVector) {
@@ -78,8 +91,21 @@ private fun Shell(model: AppModel) {
     var tab by rememberSaveable { mutableStateOf(Tab.HOY) }
     var overlay by rememberSaveable { mutableStateOf(Overlay.NONE) }
     var chatSeed by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val state by model.store.state.collectAsState()
+
+    // Reminders follow the settings: book the next one now, and ask for permission once (Android 13+).
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { Reminders.schedule(context) }
+    LaunchedEffect(state.settings.waterReminders, state.settings.fastReminders, state.profile.fasting, state.profile.windowStart) {
+        Reminders.schedule(context)
+        val wants = state.settings.waterReminders || state.settings.fastReminders
+        if (wants && Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
 
     BackHandler(overlay != Overlay.NONE || tab != Tab.HOY) {
+        if (External.justReturned()) return@BackHandler
         if (overlay != Overlay.NONE) overlay = Overlay.NONE else tab = Tab.HOY
     }
 

@@ -160,7 +160,7 @@ class Ai(private val provider: Provider, private val key: String) {
                     code == 401 || code == 403 -> throw AiException("La llave de Gemini fue rechazada. Revísala en Perfil.")
                     code == 429 -> { last = AiException("Gemini está saturado o se acabó tu cuota. Intenta en un minuto."); continue }
                     code == 404 || code >= 500 -> { last = AiException("Gemini no respondió ($code)."); continue }
-                    code !in 200..299 -> throw AiException("Gemini respondió con error $code.")
+                    code !in 200..299 -> throw AiException("Gemini: " + (runCatching { JSONObject(text).getJSONObject("error").getString("message") }.getOrNull() ?: "error $code"))
                 }
                 val parts = JSONObject(text).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
                 val out = parts.objects().joinToString("") { it.optString("text") }
@@ -237,7 +237,8 @@ Si la imagen no contiene comida, devuelve items vacío y explícalo en verdict."
 
         private const val MEMORY_RULES = """FORMATO DE RESPUESTA: responde SOLO con JSON válido, sin markdown:
 {"reply":"tu respuesta para la persona","remember":["dato nuevo y duradero sobre la persona"]}
-En "remember" pon solo cosas nuevas que valga la pena recordar por semanas (gustos, alimentos que no come, horarios, deporte, lesiones, metas, lo que le cuesta, lo que le funciona), en tercera persona y en una frase corta. Nada de lo que ya está en la MEMORIA DE LARGO PLAZO, nada del día a día ni de lo que comió hoy. Si no hay nada nuevo, deja la lista vacía."""
+En "remember" pon SOLO datos que la persona dijo explícitamente sobre sí misma en su ÚLTIMO mensaje y que valga la pena recordar por semanas (gustos, alimentos que no come, horarios, deporte, lesiones, metas, lo que le cuesta, lo que le funciona), en tercera persona y en una frase corta.
+Nunca guardes lo que tú sugeriste o recomendaste, ni lo que supones o deduces, ni lo que ya está en la MEMORIA DE LARGO PLAZO, ni lo que comió hoy. Si su último mensaje es solo una pregunta, deja la lista vacía. Ante la duda, lista vacía."""
 
         private const val MENU_SYSTEM ="""Eres nutricionista y armas menús diarios para una persona en Ecuador, como lo hace la app Fitia: comida real, casera y fácil de conseguir en Ecuador (mercado, supermercado o un almuerzo típico), con porciones en gramos que cuadren con el presupuesto de calorías.
 

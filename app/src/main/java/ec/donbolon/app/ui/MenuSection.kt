@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ec.donbolon.app.AppModel
 import ec.donbolon.app.data.AppState
+import ec.donbolon.app.data.Fast
 import ec.donbolon.app.data.Meal
 import ec.donbolon.app.data.PlannedMeal
 import ec.donbolon.app.data.Planner
@@ -45,7 +46,8 @@ private val dayOrder = listOf(Slot.DESAYUNO to 11, Slot.ALMUERZO to 16, Slot.SNA
 /** The next meal of the day that hasn't been eaten and whose time hasn't passed. */
 fun nextSlot(state: AppState, now: LocalTime = LocalTime.now()): Slot? {
     val eaten = state.mealsOn(LocalDate.now()).map { it.slot }.toSet()
-    return dayOrder.firstOrNull { (slot, until) -> slot !in eaten && now.hour < until }?.first
+    val allowed = Fast.slots(state.profile)
+    return dayOrder.firstOrNull { (slot, until) -> slot in allowed && slot !in eaten && now.hour < until }?.first
 }
 
 /**
@@ -63,7 +65,8 @@ fun NextMeal(model: AppModel, state: AppState) {
     fun budget(): Int {
         val targets = model.targets()
         val left = targets.kcal - state.totalsOn(today).kcal
-        val remaining = dayOrder.map { it.first }.dropWhile { it != slot }.filter { s -> state.mealsOn(today).none { it.slot == s } }
+        val allowed = Fast.slots(state.profile)
+        val remaining = dayOrder.map { it.first }.dropWhile { it != slot }.filter { s -> s in allowed && state.mealsOn(today).none { it.slot == s } }
         val share = Planner.share.getValue(slot) / remaining.sumOf { Planner.share.getValue(it) }
         return max(150.0, left * share).roundToInt()
     }

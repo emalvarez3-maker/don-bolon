@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import ec.donbolon.app.data.Priorities
+import ec.donbolon.app.data.Fasting
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -74,12 +75,14 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
     var changeKey by remember { mutableStateOf(false) }
     var wipe by remember { mutableStateOf(false) }
     var science by remember { mutableStateOf(false) }
+    var fasting by remember { mutableStateOf(p0.fasting) }
+    var windowStart by remember { mutableStateOf(p0.windowStart) }
 
     fun num(s: String) = s.replace(',', '.').toDoubleOrNull()
     val draft = p0.copy(
         name = name.trim(), sex = sex, age = num(age)?.toInt()?.coerceIn(14, 100) ?: p0.age,
         heightCm = num(height)?.coerceIn(120.0, 230.0) ?: p0.heightCm, weightKg = num(weight)?.coerceIn(30.0, 300.0) ?: p0.weightKg,
-        activity = activity, goal = goal, priorities = prio, rateKgWeek = rate, goalWeightKg = num(goalWeight), trainDays = trainDays, onboarded = true,
+        activity = activity, goal = goal, priorities = prio, rateKgWeek = rate, goalWeightKg = num(goalWeight), trainDays = trainDays, fasting = fasting, windowStart = windowStart, onboarded = true,
     )
     val valid = num(age) != null && num(height) != null && num(weight) != null
     val t = Nutrition.targets(draft)
@@ -177,6 +180,26 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
             }
             Text("★ lo que recomienda la evidencia para tus prioridades", color = C.faint, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
             Gap(12.dp)
+            Gap(18.dp)
+            Label("Ayuno intermitente")
+            Gap(8.dp)
+            FlowChips(Fasting.entries.map { it.label }, fasting.label) { l -> fasting = Fasting.entries.first { it.label == l } }
+            Gap(6.dp)
+            Text(fasting.detail, color = C.muted, fontSize = 13.sp)
+            if (fasting != Fasting.NINGUNO) {
+                Gap(10.dp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Tu ventana abre a las", color = C.muted, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                    Stepper({ windowStart = (windowStart + 23) % 24 }, { windowStart = (windowStart + 1) % 24 }) {
+                        Text("%02d:00".format(windowStart), fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 10.dp))
+                    }
+                }
+                Text(
+                    "Comes de %02d:00 a %02d:00. Te sugiero comidas solo dentro de esa ventana.".format(windowStart, (windowStart + fasting.windowHours) % 24),
+                    color = C.faint, fontSize = 12.sp,
+                )
+            }
+            Gap(12.dp)
             Field(goalWeight, { goalWeight = it }, "Peso meta kg (opcional)", number = true)
             Gap(18.dp)
 
@@ -240,6 +263,18 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
 
             if (!onboarding) {
                 Gap(22.dp)
+                Label("Recordatorios")
+                Gap(4.dp)
+                SettingSwitch("Tomar agua", "Cada 2 horas de 9:00 a 21:00, solo si vas atrasado", state.settings.waterReminders) { on ->
+                    model.store.edit { it.copy(settings = it.settings.copy(waterReminders = on)) }
+                }
+                SettingSwitch("Ayuno", "Cuando abre tu ventana y una hora antes de que cierre", state.settings.fastReminders) { on ->
+                    model.store.edit { it.copy(settings = it.settings.copy(fastReminders = on)) }
+                }
+            }
+
+            if (!onboarding) {
+                Gap(22.dp)
                 Label("Privacidad")
                 Gap(4.dp)
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -275,4 +310,15 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
         confirmButton = { QuietButton("Borrar", color = C.over) { model.store.wipe(); wipe = false } },
         dismissButton = { QuietButton("Cancelar", color = C.muted) { wipe = false } },
     )
+}
+
+@Composable
+private fun SettingSwitch(title: String, detail: String, on: Boolean, onChange: (Boolean) -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(title)
+            Text(detail, color = C.faint, fontSize = 12.sp)
+        }
+        Switch(on, onChange, colors = SwitchDefaults.colors(checkedTrackColor = C.accent, checkedThumbColor = C.onAccent))
+    }
 }

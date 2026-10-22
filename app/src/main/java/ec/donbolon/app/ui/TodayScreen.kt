@@ -105,6 +105,10 @@ fun TodayScreen(model: AppModel, go: (Overlay) -> Unit, ask: (String) -> Unit) {
                 }
             }
             Gap(12.dp)
+            if (state.profile.fasting != ec.donbolon.app.data.Fasting.NINGUNO) {
+                FastingCard(state)
+                Gap(12.dp)
+            }
             Habits(model, targets.waterGlasses)
             Gap(12.dp)
             NextMeal(model, state)

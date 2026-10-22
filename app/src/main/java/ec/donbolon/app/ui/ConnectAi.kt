@@ -1,6 +1,10 @@
 package ec.donbolon.app.ui
 
+import android.util.Log
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -76,22 +80,40 @@ fun ConnectAi(model: AppModel, onConnected: () -> Unit) {
             shape = RoundedCornerShape(14.dp),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = C.accent, unfocusedBorderColor = C.line, focusedLabelColor = C.accent, cursorColor = C.accent),
         )
-        error?.let { Text(it, color = C.over, fontSize = 12.sp, modifier = Modifier.fillMaxWidth()) }
+        error?.let {
+            Gap(8.dp)
+            Text(
+                "⚠ $it", color = C.over, fontSize = 13.sp,
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(C.over.copy(alpha = 0.12f)).padding(10.dp),
+            )
+        }
         Gap(10.dp)
         PrimaryButton(if (busy) "Probando…" else "Conectar", enabled = key.length >= 20 && !busy) {
+            // Copying from a web page often brings spaces, quotes or a label along: keep only the key itself.
+            val clean = cleanKey(provider, key)
             busy = true
+            error = null
             scope.launch {
                 val ok = runCatching {
-                    withContext(Dispatchers.IO) { Ai(provider, key).chat("Responde solo: ok", listOf(ChatMessage(true, "ok"))) }
+                    withContext(Dispatchers.IO) { Ai(provider, clean).chat("Responde solo: ok", listOf(ChatMessage(true, "ok"))) }
                 }
                 busy = false
                 ok.onSuccess {
-                    model.secrets.set(provider, key)
+                    model.secrets.set(provider, clean)
                     model.store.edit { it.copy(settings = it.settings.copy(provider = provider)) }
                     onConnected()
-                }.onFailure { error = it.message ?: "No pude conectar. Revisa la llave." }
+                }.onFailure {
+                    Log.w("DonBolon", "AI connect failed (${provider.name}, key length ${clean.length}): ${it.javaClass.simpleName}: ${it.message}")
+                    error = it.message ?: "No pude conectar. Revisa la llave."
+                }
             }
         }
         Text("Se guarda cifrada en tu teléfono y nunca sale de él, salvo hacia el proveedor cuando analizas una comida.", color = C.faint, fontSize = 11.sp)
     }
+}
+
+/** Pulls the actual key out of whatever was pasted (Gemini keys start with AIza, Anthropic's with sk-ant-). */
+fun cleanKey(provider: Provider, pasted: String): String {
+    val pattern = if (provider == Provider.GEMINI) Regex("AIza[0-9A-Za-z_\\-]{30,}") else Regex("sk-ant-[0-9A-Za-z_\\-]{20,}")
+    return pattern.find(pasted)?.value ?: pasted.trim().trim('"', '\'', ' ')
 }

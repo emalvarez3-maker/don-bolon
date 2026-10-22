@@ -20,7 +20,7 @@ import ec.donbolon.app.ui.External
 
 /** Everything the screens need, created once per process. */
 class AppModel(activity: FragmentActivity) {
-    val store = Store(activity.applicationContext)
+    val store = Store.get(activity)
     val secrets = Secrets(activity.applicationContext)
 
     fun ai(): Ai {

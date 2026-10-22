@@ -96,17 +96,17 @@ fun Bolon(mood: Mood, size: Dp, modifier: Modifier = Modifier, talking: Boolean 
 
     // Mood → face parameters, eased so expressions morph instead of snapping.
     val browTilt by animateFloatAsState(
-        when (shown) { Mood.ANGRY -> 1.5f; Mood.GRUMPY -> 0.9f; Mood.PROUD -> 0.15f; Mood.SLEEPY -> 0.25f; Mood.THINKING -> 0.6f; Mood.EATING -> 0.4f },
+        when (shown) { Mood.ANGRY -> 1.5f; Mood.GRUMPY -> 0.9f; Mood.PROUD -> 0.15f; Mood.SLEEPY -> 0.25f; Mood.THINKING -> 0.6f; Mood.EATING -> 0.4f; Mood.HAPPY -> -0.35f; Mood.CALM -> -0.1f },
         tween(450), label = "brow",
     )
     val rightBrowLift by animateFloatAsState(if (shown == Mood.THINKING || shown == Mood.PROUD) 1f else 0f, tween(450), label = "lift")
     val smile by animateFloatAsState(
-        when (shown) { Mood.ANGRY -> -1f; Mood.GRUMPY -> -0.7f; Mood.PROUD -> 0.55f; Mood.SLEEPY -> -0.2f; Mood.THINKING -> -0.35f; Mood.EATING -> 0f },
+        when (shown) { Mood.ANGRY -> -1f; Mood.GRUMPY -> -0.7f; Mood.PROUD -> 0.55f; Mood.SLEEPY -> -0.2f; Mood.THINKING -> -0.35f; Mood.EATING -> 0f; Mood.HAPPY -> 1f; Mood.CALM -> 0.45f },
         tween(450), label = "smile",
     )
     val eyeOpenBase by animateFloatAsState(if (shown == Mood.SLEEPY) 0.12f else if (shown == Mood.ANGRY) 0.75f else 1f, tween(500), label = "eye")
     val growl by animateFloatAsState(if (shown == Mood.ANGRY) 1f else 0f, tween(300), label = "growl")
-    val blush by animateFloatAsState(if (shown == Mood.PROUD) 1f else 0f, tween(600), label = "blush")
+    val blush by animateFloatAsState(if (shown == Mood.PROUD || shown == Mood.HAPPY) 1f else 0f, tween(600), label = "blush")
 
     val tap = if (onPoke == null) Modifier else Modifier.clickable(remember { MutableInteractionSource() }, indication = null) {
         onPoke()
@@ -199,7 +199,10 @@ private fun DrawScope.drawBolon(
     // Eyes: blink by squashing the oval; pupils drift left and right.
     for (x in listOf(80f, 120f)) {
         val h = 16f * eyeOpen
-        if (eyeOpen < 0.2f) {
+        if (mood == Mood.HAPPY && eyeOpen > 0.5f) {
+            // Happy eyes: closed upward arcs, the universal "smiling eyes".
+            drawArc(Ink, 200f, 140f, false, p(x - 9, 102f), Size(18 * u, 14 * u), style = Stroke(3.6f * u, cap = StrokeCap.Round))
+        } else if (eyeOpen < 0.2f) {
             drawArc(Ink, 10f, 160f, false, p(x - 8, 104f), Size(16 * u, 8 * u), style = Stroke(3.2f * u, cap = StrokeCap.Round))
         } else {
             drawOval(Color.White, p(x - 9f, 108f - h * 0.62f), Size(18 * u, h * 1.24f * u))
@@ -219,6 +222,16 @@ private fun DrawScope.drawBolon(
         drawRoundRect(Color.White, p(89f, 134f), Size(22 * u, 4 * u), CornerRadius(2 * u))
     } else if (mouthOpen > 0f) {
         drawOval(Ink, p(91f, 133f), Size(18 * u, (3 + 9 * mouthOpen) * u))
+    } else if (smile > 0.8f) {
+        // A real grin: open mouth with a little tongue.
+        val grin = Path().apply {
+            moveTo(84 * u, 136 * u)
+            quadraticTo(100 * u, 136 * u, 116 * u, 136 * u)
+            quadraticTo(100 * u, (136 + 22 * smile) * u, 84 * u, 136 * u)
+            close()
+        }
+        drawPath(grin, Ink)
+        drawOval(Blush.copy(alpha = 0.9f), p(93f, 144f), Size(14 * u, 6 * u))
     } else {
         val m = Path().apply {
             moveTo(86 * u, 138 * u)

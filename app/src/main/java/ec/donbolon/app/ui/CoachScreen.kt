@@ -85,7 +85,9 @@ fun CoachScreen(model: AppModel, seed: String?, onSeedUsed: () -> Unit, onClose:
                 Ai.Reply("Grrr, algo falló. " + localReply(text, s, targets), emptyList())
             }
             // What he learned goes to long-term memory; the person can review it in Perfil.
-            model.store.edit { Memory.remember(it, reply.remember).copy(chat = it.chat + ChatMessage(false, reply.text)) }
+            // Canned buttons and short questions say nothing about the person: never learn from them.
+            val learn = text !in quick && !(text.trim().endsWith("?") && text.length < 80)
+            model.store.edit { (if (learn) Memory.remember(it, reply.remember) else it).copy(chat = it.chat + ChatMessage(false, reply.text)) }
             busy = false
         }
     }
@@ -96,7 +98,7 @@ fun CoachScreen(model: AppModel, seed: String?, onSeedUsed: () -> Unit, onClose:
     Column(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding().imePadding()) {
         Row(Modifier.padding(start = 4.dp, end = 20.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClose) { Icon(Icons.Filled.Close, "Cerrar", tint = C.muted) }
-            Bolon(if (busy) Mood.THINKING else Mood.GRUMPY, 60.dp, talking = busy, onPoke = {})
+            Bolon(if (busy) Mood.THINKING else Mood.CALM, 60.dp, talking = busy, onPoke = {})
             HGap(10.dp)
             Column {
                 Text("Don Bolón", style = MaterialTheme.typography.titleLarge)

@@ -92,6 +92,8 @@ data class Profile(
     val rateKgWeek: Double = 0.5,
     val goalWeightKg: Double? = null,
     val trainDays: Int = 4,
+    val fasting: Fasting = Fasting.NINGUNO,
+    val windowStart: Int = 12,
     val priorities: Priorities = goal.priorities,
     val onboarded: Boolean = false,
 ) {
@@ -99,7 +101,8 @@ data class Profile(
         .put("name", name).put("sex", sex.name).put("age", age).put("heightCm", heightCm)
         .put("weightKg", weightKg).put("activity", activity.name).put("goal", goal.name)
         .put("rateKgWeek", rateKgWeek).put("goalWeightKg", goalWeightKg ?: JSONObject.NULL)
-        .put("trainDays", trainDays).put("priorities", priorities.toJson()).put("onboarded", onboarded)
+        .put("trainDays", trainDays).put("fasting", fasting.name).put("windowStart", windowStart)
+        .put("priorities", priorities.toJson()).put("onboarded", onboarded)
 
     companion object {
         fun from(o: JSONObject) = Profile(
@@ -113,6 +116,8 @@ data class Profile(
             rateKgWeek = o.optDouble("rateKgWeek", 0.5),
             goalWeightKg = if (o.isNull("goalWeightKg")) null else o.optDouble("goalWeightKg"),
             trainDays = o.optInt("trainDays", 4),
+            fasting = enumOr(o.optString("fasting"), Fasting.NINGUNO),
+            windowStart = o.optInt("windowStart", 12).coerceIn(0, 23),
             priorities = o.optJSONObject("priorities")?.let(Priorities::from) ?: enumOr(o.optString("goal"), Goal.BAJAR).priorities,
             onboarded = o.optBoolean("onboarded"),
         )
@@ -216,11 +221,15 @@ data class ChatMessage(val fromUser: Boolean, val text: String, val time: Long =
 
 enum class Provider(val label: String) { GEMINI("Google Gemini"), CLAUDE("Anthropic Claude"), NINGUNO("Sin IA (solo libreta)") }
 
-data class Settings(val provider: Provider = Provider.GEMINI, val lock: Boolean = false) {
+data class Settings(val provider: Provider = Provider.GEMINI, val lock: Boolean = false, val waterReminders: Boolean = true, val fastReminders: Boolean = true) {
     fun toJson(): JSONObject = JSONObject().put("provider", provider.name).put("lock", lock)
+        .put("waterReminders", waterReminders).put("fastReminders", fastReminders)
 
     companion object {
-        fun from(o: JSONObject) = Settings(enumOr(o.optString("provider"), Provider.GEMINI), o.optBoolean("lock"))
+        fun from(o: JSONObject) = Settings(
+            enumOr(o.optString("provider"), Provider.GEMINI), o.optBoolean("lock"),
+            o.optBoolean("waterReminders", true), o.optBoolean("fastReminders", true),
+        )
     }
 }
 

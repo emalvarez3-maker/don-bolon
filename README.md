@@ -23,11 +23,13 @@ Don Bolón es una app Android para **comer con consciencia todos los días**: re
 Él gruñe contra los hábitos, nunca contra ti. No hay culpa, no hay vergüenza y no hay dietas extremas.
 
 <p align="center">
-  <img src="docs/prioridades.png" width="250" alt="Prioridades en un pentágono" />
+  <img src="docs/registrar.png" width="200" alt="Registrar comida con foto, voz o texto" />
   &nbsp;
-  <img src="docs/coach.png" width="250" alt="Chat con Don Bolón" />
+  <img src="docs/prioridades.png" width="200" alt="Prioridades en un pentágono" />
   &nbsp;
-  <img src="docs/sos.png" width="250" alt="SOS antojo: respiración guiada" />
+  <img src="docs/progreso.png" width="200" alt="Progreso y enfoque de la semana" />
+  &nbsp;
+  <img src="docs/sos.png" width="200" alt="SOS antojo: respiración guiada" />
 </p>
 
 ## Lo que hace
@@ -35,13 +37,15 @@ Don Bolón es una app Android para **comer con consciencia todos los días**: re
 | | |
 |---|---|
 | 📷 **Foto primero** | Tocas **+**, tomas la foto y el análisis arranca solo. La IA separa cada ingrediente, estima gramos, cuenta el aceite oculto y comprueba que `kcal ≈ 4·P + 4·C + 9·G`. Solo si algo que la foto no muestra cambia las calorías (¿frito o a la plancha?), te hace **una** pregunta y corrige. |
-| ✍️ **O descríbelo** | "120 g de verde majado, 1 huevo frito, café con leche" también funciona, con IA o sin ella, gracias a una libreta offline con comida ecuatoriana (bolón, encebollado, seco, menestra, ceviche…). |
+| 🎤 **O díselo** | Por voz o por texto ("verde majado, huevo frito, café con leche"): también lo analiza la IA. Con **Rápido** repites una comida reciente o lo de siempre en un toque, y en la revisión ajustas cada porción con una barra. Si falla la conexión, una libreta offline con comida ecuatoriana sirve de respaldo. |
 | ⬠ **Metas en un pentágono** | Perder grasa, ganar músculo, rendimiento, salud y flexibilidad, de 0 a 100. Arrastras las puntas y todo se recalcula: calorías, proteína, grasa, fibra, margen libre, días de fuerza y cardio. |
 | 🍽️ **¿Qué como ahora?** | Una idea para tu próxima comida, ya cuadrada con lo que te queda del día. "Lo comí" la registra con un toque; "Otra idea" propone otra. |
 | 🧠 **Memoria** | Don Bolón recuerda lo que le cuentas (gustos, horarios, lo que te cuesta), aprende tus porciones reales cada vez que corriges a la IA y cada lunes elige **un solo enfoque** para la semana a partir de tu hábito más flojo, con su plan Si-Entonces. Todo lo que sabe de ti lo ves y lo borras en Perfil. |
+| 🌙 **Ayuno intermitente** | 12:12, 14:10, 16:8 o 18:6 con la hora en que abre tu ventana: un contador en vivo, ideas de comida solo dentro de la ventana y Don Bolón que no te regaña por no comer cuando estás ayunando. El ayuno funciona igual que cualquier déficit; su ventaja es que a muchos les facilita sostenerlo (Lowe et al., 2020; Liu et al., 2022). |
+| 🔔 **Recordatorios** | Agua cada 2 horas solo si vas atrasado, con un botón "Tomé uno" en la misma notificación, y avisos cuando abre tu ventana y una hora antes de que cierre. |
 | ✅ **Constancia** | Cuatro hábitos diarios (registré, proteína, entrené, agua), racha hacia los 66 días de un hábito y peso suavizado para ver la tendencia real, no el agua del día. |
 | 🧀 **Don Bolón te lo dice** | La ciencia no está pegada en la pantalla: él la trae cuando viene al caso (poca proteína, te pasaste, comiste por estrés, no has entrenado…). Toca su globo para ver el estudio, tócalo a él para hablarle. Si comiste sin hambre, te ofrece un SOS de 3 minutos para surfear el antojo. |
-| 🎨 **Personaje vivo** | Respira, parpadea, se le escurre el queso, frunce el ceño, echa vapor cuando te pasas y se sonroja (a escondidas) cuando cumples. Si lo tocas, gruñe. |
+| 🎨 **Personaje con humor** | Respira, parpadea y se le escurre el queso. Cambia de ánimo según tu día: feliz con ojos sonrientes cuando cumples, tranquilo en el día a día, gruñón solo cuando algo necesita arreglo, y echa vapor si lo tocas. |
 
 ## La ciencia detrás de cada número
 
