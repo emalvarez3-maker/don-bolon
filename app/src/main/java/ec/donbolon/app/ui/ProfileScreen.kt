@@ -24,6 +24,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -37,6 +39,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.layout.width
+import ec.donbolon.app.data.Priorities
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -60,6 +65,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
     var weight by remember { mutableStateOf(if (onboarding) "" else p0.weightKg.fmt(1)) }
     var activity by remember { mutableStateOf(p0.activity) }
     var goal by remember { mutableStateOf(p0.goal) }
+    var prio by remember { mutableStateOf(p0.priorities) }
     var rate by remember { mutableStateOf(p0.rateKgWeek) }
     var goalWeight by remember { mutableStateOf(p0.goalWeightKg?.fmt(1) ?: "") }
     var trainDays by remember { mutableStateOf(p0.trainDays) }
@@ -71,7 +77,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
     val draft = p0.copy(
         name = name.trim(), sex = sex, age = num(age)?.toInt()?.coerceIn(14, 100) ?: p0.age,
         heightCm = num(height)?.coerceIn(120.0, 230.0) ?: p0.heightCm, weightKg = num(weight)?.coerceIn(30.0, 300.0) ?: p0.weightKg,
-        activity = activity, goal = goal, rateKgWeek = rate, goalWeightKg = num(goalWeight), trainDays = trainDays, onboarded = true,
+        activity = activity, goal = goal, priorities = prio, rateKgWeek = rate, goalWeightKg = num(goalWeight), trainDays = trainDays, onboarded = true,
     )
     val valid = num(age) != null && num(height) != null && num(weight) != null
     val t = Nutrition.targets(draft)
@@ -133,34 +139,44 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
                 }
             }
             Gap(18.dp)
-            Label("Objetivo")
-            Gap(8.dp)
-            FlowChips(Goal.entries.map { it.label }, goal.label) { l -> goal = Goal.entries.first { it.label == l } }
-            Gap(6.dp)
-            Text(goal.detail, color = C.muted, fontSize = 13.sp)
-            Gap(12.dp)
-            Text("Entrenos de fuerza por semana", color = C.muted, fontSize = 13.sp)
-            Gap(8.dp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                (2..6).forEach { d -> Chip("$d", trainDays == d) { trainDays = d } }
+            Label("Tus prioridades")
+            Gap(4.dp)
+            Text("Arrastra las puntas del pentágono o usa las barras. Todo lo demás se calcula con evidencia científica.", color = C.muted, fontSize = 13.sp)
+            Gap(10.dp)
+            FlowChips(Goal.entries.map { it.label }, Goal.entries.firstOrNull { it.priorities == prio }?.label) { l ->
+                val g = Goal.entries.first { it.label == l }
+                goal = g; prio = g.priorities
             }
-            if (goal == Goal.DEFINIR) {
-                Gap(8.dp)
+            Gap(8.dp)
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Pentagon(prio.values, Priorities.short) { i, v -> prio = prio.with(i, v) }
+            }
+            Priorities.names.forEachIndexed { i, n ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(n, fontSize = 14.sp, modifier = Modifier.width(110.dp))
+                    Slider(
+                        prio.values[i].toFloat(), { prio = prio.with(i, it.toDouble()) }, Modifier.weight(1f),
+                        colors = SliderDefaults.colors(thumbColor = C.honey, activeTrackColor = C.honey, inactiveTrackColor = C.raised),
+                    )
+                    Text("${(prio.values[i] * 100).toInt()}", color = C.muted, fontSize = 13.sp, modifier = Modifier.width(34.dp), textAlign = TextAlign.End)
+                }
+            }
+            if (prio.fat >= 0.6 && prio.muscle >= 0.6) {
+                Gap(4.dp)
                 Text(
-                    "Los cuadritos aparecen con poca grasa (≈10–12% en hombres, 16–19% en mujeres) y músculo debajo. Los abdominales solos no queman la grasa de la panza: eso lo hace el déficit.",
+                    "Recomposición: así se marcan los cuadritos. Aparecen con poca grasa (≈10–12% en hombres, 16–19% en mujeres) y músculo debajo; los abdominales solos no queman la grasa de la panza.",
                     color = C.faint, fontSize = 12.sp,
                 )
             }
-            if (goal == Goal.BAJAR || goal == Goal.SUBIR) {
-                Gap(12.dp)
-                Text("Ritmo por semana", color = C.muted, fontSize = 13.sp)
-                Gap(8.dp)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(0.25, 0.5, 0.75, 1.0).forEach { r -> Chip("${r} kg", rate == r) { rate = r } }
-                }
-                Gap(12.dp)
-                Field(goalWeight, { goalWeight = it }, "Peso meta kg (opcional)", number = true)
+            Gap(14.dp)
+            Text("Entrenos de fuerza por semana (tu plan)", color = C.muted, fontSize = 13.sp)
+            Gap(8.dp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                (2..6).forEach { d -> Chip(if (d == t.strengthDays) "$d ★" else "$d", trainDays == d) { trainDays = d } }
             }
+            Text("★ lo que recomienda la evidencia para tus prioridades", color = C.faint, fontSize = 11.sp, modifier = Modifier.padding(top = 4.dp))
+            Gap(12.dp)
+            Field(goalWeight, { goalWeight = it }, "Peso meta kg (opcional)", number = true)
             Gap(18.dp)
 
             if (valid) Panel {
@@ -171,19 +187,20 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
                     Text("  kcal / día", color = C.muted, modifier = Modifier.padding(bottom = 8.dp))
                 }
                 Text("Proteína ${t.protein} g · Carbos ${t.carbs} g · Grasa ${t.fat} g · Fibra ${t.fiber} g", fontSize = 14.sp)
-                Gap(8.dp)
-                Text(
-                    "Metabolismo en reposo ${t.bmr} kcal (Mifflin–St Jeor) × actividad = gasto ${t.tdee} kcal. " +
-                        when {
-                            goal == Goal.MANTENER -> "Comes lo que gastas."
-                            goal == Goal.DEFINIR -> "Déficit suave de ${t.tdee - t.kcal} kcal (≈${(-t.weeklyChangeKg).fmt(2)} kg/semana) con ${t.protein} g de proteína: bajas grasa sin frenar el músculo, si entrenas pesas $trainDays veces por semana."
-                            t.weeklyChangeKg < 0 -> "Déficit de ${t.tdee - t.kcal} kcal ≈ ${(-t.weeklyChangeKg).fmt(2)} kg/semana al inicio; luego se frena un poco, es normal."
-                            else -> "Superávit de ${t.kcal - t.tdee} kcal para ganar músculo con poca grasa."
-                        },
-                    color = C.muted, fontSize = 13.sp,
-                )
-                if (t.capped) Text("Recorté el ritmo: más rápido cuesta músculo y suele rebotar.", color = C.honey, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                if (t.weeklyChangeKg < -0.02 || t.weeklyChangeKg > 0.02) {
+                    Text(
+                        "≈ ${if (t.weeklyChangeKg > 0) "+" else "−"}${kotlin.math.abs(t.weeklyChangeKg).fmt(2)} kg/semana al inicio (luego se frena un poco, es normal)",
+                        color = C.muted, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
                 if (t.floored) Text("No bajo de ${t.kcal} kcal: menos que eso no es seguro sin supervisión médica.", color = C.honey, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp))
+                Gap(14.dp)
+                Label("Por qué estos números")
+                t.why.forEach { w ->
+                    Gap(10.dp)
+                    Text(w.text, fontSize = 13.sp)
+                    Text(w.source, color = C.faint, fontSize = 11.sp)
+                }
             }
 
             Gap(22.dp)

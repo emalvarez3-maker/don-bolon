@@ -8,11 +8,45 @@ import java.time.ZoneId
 
 enum class Sex { HOMBRE, MUJER }
 
-enum class Goal(val label: String, val detail: String) {
-    DEFINIR("Marcar abdomen", "Bajar grasa y ganar músculo a la vez: déficit pequeño, mucha proteína y pesas"),
-    BAJAR("Bajar grasa", "Déficit más grande; prioridad: perder grasa"),
-    SUBIR("Ganar músculo", "Superávit pequeño para crecer con poca grasa"),
-    MANTENER("Mantener", "Comer lo que gastas"),
+/**
+ * What the user wants, each from 0 to 1, drawn as a pentagon. Every daily target is derived
+ * from these five numbers (see [Nutrition.targets]); presets are just starting points.
+ */
+data class Priorities(
+    val fat: Double = 0.9,
+    val muscle: Double = 0.8,
+    val performance: Double = 0.4,
+    val health: Double = 0.6,
+    val flexibility: Double = 0.5,
+) {
+    val values get() = listOf(fat, muscle, performance, health, flexibility)
+
+    fun with(i: Int, v: Double): Priorities {
+        val x = v.coerceIn(0.0, 1.0)
+        return when (i) { 0 -> copy(fat = x); 1 -> copy(muscle = x); 2 -> copy(performance = x); 3 -> copy(health = x); else -> copy(flexibility = x) }
+    }
+
+    fun toJson(): JSONObject = JSONObject().put("fat", fat).put("muscle", muscle).put("performance", performance)
+        .put("health", health).put("flexibility", flexibility)
+
+    companion object {
+        val names = listOf("Perder grasa", "Ganar músculo", "Rendimiento", "Salud", "Flexibilidad")
+        val short = listOf("Grasa ↓", "Músculo ↑", "Rendir", "Salud", "Flexible")
+
+        fun from(o: JSONObject) = Priorities(
+            o.optDouble("fat", 0.9), o.optDouble("muscle", 0.8), o.optDouble("performance", 0.4),
+            o.optDouble("health", 0.6), o.optDouble("flexibility", 0.5),
+        )
+    }
+}
+
+/** Presets that set the pentagon; the sliders can then fine-tune it. */
+enum class Goal(val label: String, val detail: String, val priorities: Priorities) {
+    DEFINIR("Marcar abdomen", "Bajar grasa y ganar músculo a la vez: déficit pequeño, mucha proteína y pesas", Priorities(0.9, 0.8, 0.4, 0.6, 0.5)),
+    BAJAR("Bajar grasa", "Déficit más grande; prioridad: perder grasa", Priorities(1.0, 0.3, 0.2, 0.6, 0.5)),
+    SUBIR("Ganar músculo", "Superávit pequeño para crecer con poca grasa", Priorities(0.1, 1.0, 0.5, 0.5, 0.5)),
+    RENDIR("Rendir", "Energía para entrenar fuerte; el peso queda estable", Priorities(0.2, 0.5, 1.0, 0.6, 0.4)),
+    MANTENER("Salud", "Comer lo que gastas, con calidad", Priorities(0.0, 0.2, 0.3, 1.0, 0.7)),
 }
 
 enum class Activity(val label: String, val detail: String, val factor: Double) {
@@ -58,13 +92,14 @@ data class Profile(
     val rateKgWeek: Double = 0.5,
     val goalWeightKg: Double? = null,
     val trainDays: Int = 4,
+    val priorities: Priorities = goal.priorities,
     val onboarded: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("name", name).put("sex", sex.name).put("age", age).put("heightCm", heightCm)
         .put("weightKg", weightKg).put("activity", activity.name).put("goal", goal.name)
         .put("rateKgWeek", rateKgWeek).put("goalWeightKg", goalWeightKg ?: JSONObject.NULL)
-        .put("trainDays", trainDays).put("onboarded", onboarded)
+        .put("trainDays", trainDays).put("priorities", priorities.toJson()).put("onboarded", onboarded)
 
     companion object {
         fun from(o: JSONObject) = Profile(
@@ -78,6 +113,7 @@ data class Profile(
             rateKgWeek = o.optDouble("rateKgWeek", 0.5),
             goalWeightKg = if (o.isNull("goalWeightKg")) null else o.optDouble("goalWeightKg"),
             trainDays = o.optInt("trainDays", 4),
+            priorities = o.optJSONObject("priorities")?.let(Priorities::from) ?: enumOr(o.optString("goal"), Goal.BAJAR).priorities,
             onboarded = o.optBoolean("onboarded"),
         )
     }

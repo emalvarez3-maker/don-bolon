@@ -6,16 +6,12 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
+/** One line of the "why these numbers" list: what was decided and the evidence behind it. */
+data class Why(val text: String, val source: String)
+
 /**
- * The daily prescription. Every number here comes from a published method:
- * - Resting energy: Mifflin–St Jeor (1990), the most accurate predictive equation in
- *   the ADA evidence review (Frankenfield et al., 2005).
- * - Activity multipliers: FAO/WHO/UNU physical-activity levels.
- * - 1 kg of body fat ≈ 7700 kcal; deficits are capped at 25% of TDEE and ~1% of body
- *   weight per week to protect lean mass (Helms et al., 2014; Hall et al., 2011 show the
- *   real curve flattens, so the weekly estimate is a guide, not a promise).
- * - Protein 1.6–2.2 g/kg in a deficit (Morton et al., 2018; Helms 2014); fiber 14 g per
- *   1000 kcal (Dietary Guidelines); fat never below ~0.6 g/kg for hormones.
+ * The daily prescription. Every number comes from a published method; [why] carries the
+ * reasoning so the app can show it instead of asking to be trusted.
  */
 data class Targets(
     val bmr: Int,
@@ -29,6 +25,12 @@ data class Targets(
     val weeklyChangeKg: Double,
     val floored: Boolean,
     val capped: Boolean,
+    val proteinPerKg: Double = 0.0,
+    val flexKcal: Int = 0,
+    val strengthDays: Int = 3,
+    val cardioMinutes: Int = 150,
+    val band: Double = 0.10,
+    val why: List<Why> = emptyList(),
 )
 
 object Nutrition {
@@ -45,48 +47,81 @@ object Nutrition {
         return if (bmi(p) > 30) ref else p.weightKg
     }
 
+    /**
+     * Turns the five priorities into numbers. F = lose fat, M = gain muscle, P = performance,
+     * H = health, X = flexibility, each 0..1. The shapes are chosen so the corners land on
+     * the published recommendations:
+     * - Energy: pure fat loss → −25% of TDEE; pure muscle → +10%; both (recomposition) → ≈ −12%
+     *   (Helms et al., 2014; Iraki et al., 2019; Barakat et al., 2020). Performance shrinks a
+     *   deficit by up to 30% to keep energy availability up (Mountjoy et al., 2018, RED-S).
+     * - Safety: deficit ≤ 1% of body weight a week, surplus ≤ 1.5% a month, never below
+     *   1500/1200 kcal without supervision.
+     * - Protein 1.2–2.4 g/kg, highest when cutting while trying to keep or build muscle
+     *   (Morton et al., 2018; Helms et al., 2014; Jäger et al., 2017, ISSN).
+     * - Fat 25–30% of energy and ≥ 0.7 g/kg; fiber ≥ 14 g/1000 kcal and ≥ 25–30 g
+     *   (Reynolds et al., 2019, The Lancet). Carbs fill the rest.
+     */
     fun targets(p: Profile): Targets {
+        val (f, m, perf, h, x) = p.priorities.values
         val bmr = bmr(p)
         val tdee = bmr * p.activity.factor
+        val why = mutableListOf<Why>()
         var capped = false
         var floored = false
-        val kcal = when (p.goal) {
-            Goal.MANTENER -> tdee
-            Goal.BAJAR -> {
-                val wanted = p.rateKgWeek * 7700 / 7
-                val safe = min(tdee * 0.25, p.weightKg * 0.01 * 7700 / 7)
-                if (wanted > safe) capped = true
-                val raw = tdee - min(wanted, safe)
-                val floor = if (p.sex == Sex.HOMBRE) 1500.0 else 1200.0
-                if (raw < floor) floored = true
-                max(raw, floor)
-            }
-            Goal.SUBIR -> {
-                val wanted = p.rateKgWeek * 7700 / 7
-                if (wanted > 500) capped = true
-                tdee + min(wanted, 500.0)
-            }
-            // Recomposition: a small deficit (~15%, at most ~0.5% of body weight a week) plus
-            // strength training and high protein lets fat drop while muscle still grows
-            // (Barakat et al., 2020, Strength & Conditioning Journal).
-            Goal.DEFINIR -> {
-                val raw = tdee - min(tdee * 0.15, p.weightKg * 0.005 * 7700 / 7)
-                val floor = if (p.sex == Sex.HOMBRE) 1500.0 else 1200.0
-                if (raw < floor) floored = true
-                max(raw, floor)
-            }
+
+        var delta = -0.25 * f * (1 - 0.5 * m) + 0.10 * m * (1 - f)
+        if (delta < 0) delta *= (1 - 0.3 * perf)
+        var kcal = tdee * (1 + delta)
+        if (delta < 0) {
+            val maxDeficit = p.weightKg * 0.01 * 7700 / 7
+            if (tdee - kcal > maxDeficit) { kcal = tdee - maxDeficit; capped = true }
+            val floor = if (p.sex == Sex.HOMBRE) 1500.0 else 1200.0
+            if (kcal < floor) { kcal = floor; floored = true }
+        } else {
+            val maxSurplus = p.weightKg * 0.015 * 7700 / 30
+            if (kcal - tdee > maxSurplus) { kcal = tdee + maxSurplus; capped = true }
         }
-        val pw = proteinWeight(p)
-        val proteinPerKg = when (p.goal) {
-            Goal.BAJAR -> if (p.activity.ordinal >= Activity.MODERADO.ordinal) 2.2 else 1.8
-            Goal.DEFINIR -> 2.2
-            Goal.SUBIR -> 2.0
-            Goal.MANTENER -> 1.6
-        }
-        val protein = pw * proteinPerKg
-        val fat = max(kcal * 0.28 / 9, p.weightKg * 0.6)
+        val pct = ((kcal / tdee - 1) * 100).roundToInt()
+        why += Why(
+            "Gasto diario ${tdee.roundToInt()} kcal: metabolismo en reposo ${bmr.roundToInt()} × actividad ${p.activity.factor}.",
+            "Mifflin–St Jeor (1990), la ecuación más precisa según Frankenfield et al. (2005); factores FAO/OMS",
+        )
+        why += Why(
+            when {
+                pct <= -3 -> "Déficit de ${-pct}%: lo bastante para bajar grasa, no tanto como para perder músculo."
+                pct >= 3 -> "Superávit de $pct%: crecer sin acumular grasa de más."
+                else -> "Mantenimiento: el peso queda estable mientras mejoras composición."
+            } + if (capped) " Lo limité por seguridad." else "",
+            "Helms et al. (2014) JISSN; Iraki et al. (2019) Sports; Barakat et al. (2020) SCJ",
+        )
+
+        val proteinPerKg = (1.2 + 0.6 * max(f, m) + 0.4 * f * m + 0.2 * perf).coerceIn(1.2, 2.4)
+        val protein = proteinWeight(p) * proteinPerKg
+        why += Why(
+            "Proteína ${"%.1f".format(proteinPerKg)} g/kg: protege y construye músculo, y es lo que más sacia.",
+            "Morton et al. (2018) BJSM, meta-análisis; Jäger et al. (2017) posición ISSN",
+        )
+        val fat = max(kcal * (0.25 + 0.05 * h) / 9, p.weightKg * 0.7)
         val carbs = max((kcal - protein * 4 - fat * 9) / 4, 50.0)
-        val change = (kcal - tdee) * 7 / 7700
+        if (perf >= 0.6 && carbs < p.weightKg * 3) {
+            why += Why("Para rendir conviene llegar a 3–5 g/kg de carbos los días de entreno: súbelos esos días.", "Kerksick et al. (2017) posición ISSN sobre timing de nutrientes")
+        }
+        val fiber = max(kcal / 1000 * 14, 25 + 5 * h)
+        why += Why("Fibra ${fiber.roundToInt()} g: menos mortalidad y mejor saciedad con 25–30 g o más.", "Reynolds et al. (2019) The Lancet")
+
+        val flex = kcal * (0.05 + 0.10 * x)
+        val band = 0.07 + 0.08 * x
+        why += Why(
+            "Margen libre de ${flex.roundToInt()} kcal para lo que quieras, y un día cuenta como cumplido a ±${(band * 100).roundToInt()}%.",
+            "Restricción flexible vs. rígida: Westenhoefer et al. (1999); Smith et al. (1999)",
+        )
+        val strength = (2 + 2 * m + perf).roundToInt().coerceIn(2, 6)
+        val cardio = if (h >= 0.4) 150 else 75
+        why += Why(
+            "Fuerza $strength días por semana (cada músculo ≥ 2 veces) y $cardio min de cardio.",
+            "Schoenfeld et al. (2016) Sports Med; Guías de actividad física OMS (2020)",
+        )
+
         return Targets(
             bmr = bmr.roundToInt(),
             tdee = tdee.roundToInt(),
@@ -94,11 +129,17 @@ object Nutrition {
             protein = protein.roundToInt(),
             carbs = carbs.roundToInt(),
             fat = fat.roundToInt(),
-            fiber = (kcal / 1000 * 14).roundToInt(),
+            fiber = fiber.roundToInt(),
             waterGlasses = (p.weightKg * 35 / 250).roundToInt().coerceIn(6, 16),
-            weeklyChangeKg = change,
+            weeklyChangeKg = (kcal - tdee) * 7 / 7700,
             floored = floored,
             capped = capped,
+            proteinPerKg = proteinPerKg,
+            flexKcal = (flex / 10).roundToInt() * 10,
+            strengthDays = strength,
+            cardioMinutes = cardio,
+            band = band,
+            why = why,
         )
     }
 
@@ -144,5 +185,5 @@ object Nutrition {
     }
 
     /** A day is "on target" within ±10% of the calorie goal: flexible, not all-or-nothing. */
-    fun onTarget(kcal: Double, target: Int) = target > 0 && abs(kcal - target) <= target * 0.10
+    fun onTarget(kcal: Double, target: Int, band: Double = 0.10) = target > 0 && abs(kcal - target) <= target * band
 }

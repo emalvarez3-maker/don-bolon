@@ -110,11 +110,11 @@ object Science {
                 Mood.GRUMPY to "Ayer te pasaste. ¿Y? Hoy se come normal, sin castigo. Gruño, pero no te voy a dejar compensar con hambre."
             meals.isEmpty() && now.hour >= 11 -> Mood.ANGRY to "¿Nada registrado todavía? Grrr. No te pido perfección, te pido una foto."
             meals.isEmpty() -> Mood.GRUMPY to "Hmpf. Buenos días, $name. Cuando comas algo, me lo enseñas. Yo vigilo."
-            state.profile.goal in listOf(Goal.DEFINIR, Goal.SUBIR) && today !in state.workouts && now.hour in 17..21 &&
+            state.profile.priorities.muscle >= 0.5 && today !in state.workouts && now.hour in 17..21 &&
                 Nutrition.workoutsThisWeek(state) < state.profile.trainDays ->
                 Mood.GRUMPY to "¿Y el entreno, $name? Los cuadritos se descubren en la cocina, pero se construyen con pesas. Llevas ${Nutrition.workoutsThisWeek(state)} de ${state.profile.trainDays} esta semana."
             left < -targets.kcal * 0.10 -> Mood.ANGRY to "Te pasaste ${(-left).toInt()} kcal. Respira. Una comida no decide nada; la siguiente que sea liviana y con proteína."
-            Nutrition.onTarget(t.kcal, targets.kcal) && t.protein >= targets.protein * 0.9 ->
+            Nutrition.onTarget(t.kcal, targets.kcal, targets.band) && t.protein >= targets.protein * 0.9 ->
                 Mood.PROUD to "…Bien hecho. No te acostumbres a que lo diga. Calorías en rango Y proteína cumplida."
             left in 0.0..(targets.kcal * 0.10) -> Mood.PROUD to "Casi en la meta. Si te da hambre: verduras o algo con proteína. Nada de picar por picar."
             t.protein < targets.protein * 0.5 && now.hour >= 15 ->
@@ -155,7 +155,7 @@ Reglas:
         val week = (1..7).map { today.minusDays(it.toLong()) }.map { state.totalsOn(it).kcal.toInt() }
         val emotional = state.meals.filter { it.date >= today.minusDays(7) && it.reason?.physical == false }.groupingBy { it.reason!!.label }.eachCount()
         return """DATOS DEL USUARIO (hoy ${today}, ${LocalTime.now().withNano(0).withSecond(0)}):
-Nombre: ${p.name.ifBlank { "—" }} · ${p.sex.name.lowercase()} · ${p.age} años · ${p.heightCm.toInt()} cm · ${"%.1f".format(p.weightKg)} kg · actividad ${p.activity.label.lowercase()} · objetivo: ${p.goal.label.lowercase()}${p.goalWeightKg?.let { " hasta $it kg" } ?: ""}
+Nombre: ${p.name.ifBlank { "—" }} · ${p.sex.name.lowercase()} · ${p.age} años · ${p.heightCm.toInt()} cm · ${"%.1f".format(p.weightKg)} kg · actividad ${p.activity.label.lowercase()} · prioridades (0-100): ${Priorities.names.zip(p.priorities.values).joinToString { "${it.first} ${(it.second * 100).toInt()}" }}${p.goalWeightKg?.let { " hasta $it kg" } ?: ""}
 Metas diarias: ${targets.kcal} kcal · P ${targets.protein} g · C ${targets.carbs} g · G ${targets.fat} g · fibra ${targets.fiber} g (TDEE ${targets.tdee})
 Hoy lleva: ${t.kcal.toInt()} kcal · P ${t.protein.toInt()} g · C ${t.carbs.toInt()} g · G ${t.fat.toInt()} g · fibra ${t.fiber.toInt()} g · le quedan ${(targets.kcal - t.kcal).toInt()} kcal
 Comidas de hoy:

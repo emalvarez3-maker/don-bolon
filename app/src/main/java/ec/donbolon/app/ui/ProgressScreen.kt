@@ -87,7 +87,7 @@ fun ProgressScreen(model: AppModel) {
                 Row {
                     val avg = logged.map { state.totalsOn(it).kcal }.average().takeIf { !it.isNaN() } ?: 0.0
                     Mini("${avg.fmt()}", "kcal promedio", Modifier.weight(1f))
-                    Mini("${logged.count { Nutrition.onTarget(state.totalsOn(it).kcal, targets.kcal) }}/7", "días en rango", Modifier.weight(1f))
+                    Mini("${logged.count { Nutrition.onTarget(state.totalsOn(it).kcal, targets.kcal, targets.band) }}/7", "días en rango", Modifier.weight(1f))
                     Mini("${logged.count { state.totalsOn(it).protein >= targets.protein * 0.9 }}/7", "días con proteína", Modifier.weight(1f))
                 }
             }
