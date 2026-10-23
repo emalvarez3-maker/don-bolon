@@ -152,7 +152,8 @@ class Ai(private val provider: Provider, private val key: String) {
             })
             .toString()
         var last: Exception? = null
-        for (model in GEMINI_MODELS) {
+        // The model that answered last time goes first, so a working setup costs one request.
+        for (model in listOfNotNull(workingModel) + GEMINI_MODELS.filter { it != workingModel }) {
             try {
                 val conn = (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection).apply {
                     requestMethod = "POST"
@@ -167,7 +168,8 @@ class Ai(private val provider: Provider, private val key: String) {
                 val text = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.readText().orEmpty()
                 when {
                     code == 400 && text.contains("API_KEY_INVALID") -> throw AiException("La llave de Gemini no es válida. Revísala en Perfil.")
-                    code == 401 -> throw AiException("Google rechazó la llave (" + googleMessage(text, code) + "). Si la cambiaste o la borraste en AI Studio, pega la nueva en Perfil.")
+                    // New "AQ." keys get 401 on some models and work on others, so a 401 is not final until every model said it.
+                    code == 401 -> { last = AiException("Google rechazó la llave (" + googleMessage(text, code) + "). Si la cambiaste o la borraste en AI Studio, pega la nueva en Perfil."); continue }
                     // 403 can be about one model (not enabled for this key or tier), so try the next before giving up.
                     code == 403 -> { last = AiException("Google no dio acceso: " + googleMessage(text, code)); continue }
                     code == 429 -> { last = AiException("Gemini está saturado o se acabó tu cuota. Intenta en un minuto."); continue }
@@ -177,6 +179,7 @@ class Ai(private val provider: Provider, private val key: String) {
                 val parts = JSONObject(text).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
                 val out = parts.objects().joinToString("") { it.optString("text") }
                 if (out.isBlank()) { last = AiException("Gemini no devolvió respuesta."); continue }
+                workingModel = model
                 return out
             } catch (e: IOException) {
                 last = AiException("Sin conexión. Revisa tu internet.")
@@ -228,7 +231,10 @@ class Ai(private val provider: Provider, private val key: String) {
     }
 
     companion object {
-        private val GEMINI_MODELS = listOf("gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.5-flash-lite")
+        private val GEMINI_MODELS = listOf("gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite")
+
+        /** The Gemini model that last answered, remembered for the rest of the session. */
+        @Volatile private var workingModel: String? = null
         private const val CLAUDE_MODEL = "claude-opus-5-5"
 
         private const val ANALYZE_SYSTEM = """Eres un nutricionista experto en estimar porciones a partir de fotos y descripciones, con dominio de la comida ecuatoriana y latinoamericana. Tu trabajo es estimar con honestidad, no adivinar con falsa precisión.

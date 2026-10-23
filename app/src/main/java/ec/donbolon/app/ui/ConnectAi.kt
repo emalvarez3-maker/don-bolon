@@ -103,8 +103,12 @@ fun ConnectAi(model: AppModel, onConnected: () -> Unit) {
                     model.store.edit { it.copy(settings = it.settings.copy(provider = provider)) }
                     onConnected()
                 }.onFailure {
-                    Log.w("DonBolon", "AI connect failed (${provider.name}, key length ${clean.length}): ${it.javaClass.simpleName}: ${it.message}")
-                    error = it.message ?: "No pude conectar. Revisa la llave."
+                    // A fingerprint of the key (first 3 characters, length, any odd characters), never the key itself:
+                    // enough to tell a truncated or wrong paste from a key Google really rejects.
+                    val odd = clean.filterNot { c -> c.isLetterOrDigit() || c in "_-." }.toSet().joinToString("")
+                    val shape = "empieza con \"${clean.take(3)}…\", ${clean.length} caracteres" + if (odd.isNotEmpty()) ", caracteres raros: $odd" else ""
+                    Log.w("DonBolon", "AI connect failed (${provider.name}, $shape): ${it.javaClass.simpleName}: ${it.message}")
+                    error = (it.message ?: "No pude conectar.") + "\n\nLo que pegaste: $shape."
                 }
             }
         }
