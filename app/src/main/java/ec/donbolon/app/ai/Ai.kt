@@ -123,11 +123,20 @@ class Ai(private val provider: Provider, private val key: String) {
 
     data class Reply(val text: String, val remember: List<String>)
 
+    /** The cheapest request that proves the key works, with short timeouts so connecting never hangs. */
+    fun check() {
+        when (provider) {
+            Provider.GEMINI -> gemini("Responde solo: ok", listOf(Turn(true, "ok", null)), json = false, readTimeout = 20_000)
+            Provider.CLAUDE -> claude("Responde solo: ok", listOf(Turn(true, "ok", null)), effort = BetaOutputConfig.Effort.LOW)
+            Provider.NINGUNO -> throw AiException("Sin IA configurada")
+        }
+    }
+
     /** Google explains what went wrong in error.message; show that instead of guessing. */
     private fun googleMessage(body: String, code: Int): String =
         (runCatching { JSONObject(body).getJSONObject("error").getString("message") }.getOrNull()?.take(220) ?: "error $code")
             // Some messages quote the key itself; never show or log it.
-            .replace(Regex("AIza[0-9A-Za-z_-]{10,}|sk-ant-[0-9A-Za-z_-]{10,}"), "[llave]")
+            .replace(Regex("AIza[0-9A-Za-z_-]{10,}|AQ\\.[0-9A-Za-z_.-]{10,}|sk-ant-[0-9A-Za-z_-]{10,}"), "[llave]")
 
     private data class Turn(val user: Boolean, val text: String, val photo: Bitmap?)
 
@@ -137,7 +146,7 @@ class Ai(private val provider: Provider, private val key: String) {
         return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
     }
 
-    private fun gemini(system: String, turns: List<Turn>, json: Boolean): String {
+    private fun gemini(system: String, turns: List<Turn>, json: Boolean, readTimeout: Int = 90_000): String {
         val contents = JSONArray(turns.map { t ->
             val parts = JSONArray()
             t.photo?.let { parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", jpeg(it)))) }
@@ -160,7 +169,7 @@ class Ai(private val provider: Provider, private val key: String) {
                     requestMethod = "POST"
                     doOutput = true
                     connectTimeout = 15_000
-                    readTimeout = 90_000
+                    this.readTimeout = readTimeout
                     setRequestProperty("Content-Type", "application/json")
                     setRequestProperty("x-goog-api-key", key)
                 }
