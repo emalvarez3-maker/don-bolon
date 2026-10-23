@@ -100,6 +100,7 @@ fun ConnectAi(model: AppModel, onConnected: () -> Unit) {
                 busy = false
                 ok.onSuccess {
                     model.secrets.set(provider, clean)
+                    Ai.keyRejected = false
                     model.store.edit { it.copy(settings = it.settings.copy(provider = provider)) }
                     onConnected()
                 }.onFailure {

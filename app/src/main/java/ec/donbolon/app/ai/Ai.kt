@@ -28,7 +28,8 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
-class AiException(message: String) : Exception(message)
+/** [badKey]: the provider refused the key itself, so the fix is pasting another one, not retrying. */
+class AiException(message: String, val badKey: Boolean = false) : Exception(message)
 
 data class Analysis(
     val items: List<FoodItem>,
@@ -167,9 +168,9 @@ class Ai(private val provider: Provider, private val key: String) {
                 val code = conn.responseCode
                 val text = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.readText().orEmpty()
                 when {
-                    code == 400 && text.contains("API_KEY_INVALID") -> throw AiException("La llave de Gemini no es válida. Revísala en Perfil.")
+                    code == 400 && text.contains("API_KEY_INVALID") -> { keyRejected = true; throw AiException("Google dice que esta llave no es válida. Pega la que usas ahora (la de AI Studio).", badKey = true) }
                     // New "AQ." keys get 401 on some models and work on others, so a 401 is not final until every model said it.
-                    code == 401 -> { last = AiException("Google rechazó la llave (" + googleMessage(text, code) + "). Si la cambiaste o la borraste en AI Studio, pega la nueva en Perfil."); continue }
+                    code == 401 -> { last = AiException("Google rechazó la llave guardada (" + googleMessage(text, code) + "). Pega la que usas ahora (la de AI Studio).", badKey = true); continue }
                     // 403 can be about one model (not enabled for this key or tier), so try the next before giving up.
                     code == 403 -> { last = AiException("Google no dio acceso: " + googleMessage(text, code)); continue }
                     code == 429 -> { last = AiException("Gemini está saturado o se acabó tu cuota. Intenta en un minuto."); continue }
@@ -180,11 +181,13 @@ class Ai(private val provider: Provider, private val key: String) {
                 val out = parts.objects().joinToString("") { it.optString("text") }
                 if (out.isBlank()) { last = AiException("Gemini no devolvió respuesta."); continue }
                 workingModel = model
+                keyRejected = false
                 return out
             } catch (e: IOException) {
                 last = AiException("Sin conexión. Revisa tu internet.")
             }
         }
+        if ((last as? AiException)?.badKey == true) keyRejected = true
         throw last ?: AiException("Gemini no respondió.")
     }
 
@@ -220,7 +223,8 @@ class Ai(private val provider: Provider, private val key: String) {
             if (response.stopReason().orElse(null) == BetaStopReason.REFUSAL) throw AiException("Claude no quiso responder a eso.")
             return response.content().flatMap { b -> b.text().map { listOf(it.text()) }.orElse(emptyList()) }.joinToString("\n")
         } catch (e: UnauthorizedException) {
-            throw AiException("La llave de Claude no es válida. Revísala en Perfil.")
+            keyRejected = true
+            throw AiException("Anthropic dice que esta llave no es válida. Pega la que usas ahora.", badKey = true)
         } catch (e: RateLimitException) {
             throw AiException("Claude está saturado. Intenta en un minuto.")
         } catch (e: AnthropicIoException) {
@@ -235,6 +239,9 @@ class Ai(private val provider: Provider, private val key: String) {
 
         /** The Gemini model that last answered, remembered for the rest of the session. */
         @Volatile private var workingModel: String? = null
+
+        /** The saved key was refused by the provider, so Perfil stops calling it "Conectado". */
+        @Volatile var keyRejected = false
         private const val CLAUDE_MODEL = "claude-opus-5-5"
 
         private const val ANALYZE_SYSTEM = """Eres un nutricionista experto en estimar porciones a partir de fotos y descripciones, con dominio de la comida ecuatoriana y latinoamericana. Tu trabajo es estimar con honestidad, no adivinar con falsa precisión.

@@ -50,6 +50,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ec.donbolon.app.AppModel
+import ec.donbolon.app.ai.Ai
 import ec.donbolon.app.data.Activity
 import ec.donbolon.app.data.Mood
 import ec.donbolon.app.data.Goal
@@ -262,7 +263,11 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
             Gap(22.dp)
             Label("Inteligencia artificial")
             Gap(8.dp)
-            if (aiOn && !changeKey) {
+            if (aiOn && !changeKey && Ai.keyRejected) {
+                Text("✗ ${if (state.settings.provider == Provider.CLAUDE) "Anthropic" else "Google"} rechazó la llave guardada. Pega la que usas ahora:", color = C.over, fontSize = 13.sp)
+                Gap(8.dp)
+                ConnectAi(model) { aiOn = true; changeKey = false }
+            } else if (aiOn && !changeKey) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("✓ Conectado a ${if (state.settings.provider == Provider.CLAUDE) "Claude" else "Gemini"}", color = C.good, modifier = Modifier.weight(1f))
                     QuietButton("Cambiar llave", color = C.muted) { changeKey = true }

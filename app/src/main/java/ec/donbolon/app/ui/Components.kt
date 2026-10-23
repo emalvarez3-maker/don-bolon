@@ -93,8 +93,8 @@ fun PrimaryButton(text: String, modifier: Modifier = Modifier, enabled: Boolean 
 
 @Composable
 fun QuietButton(text: String, modifier: Modifier = Modifier, color: Color = C.accent, onClick: () -> Unit) {
-    TextButton(onClick, modifier, contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)) {
-        Text(text, color = color, fontWeight = FontWeight.Medium)
+    TextButton(onClick, modifier, contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)) {
+        Text(text, color = color, fontWeight = FontWeight.Medium, maxLines = 1, softWrap = false)
     }
 }
 

@@ -87,6 +87,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import ec.donbolon.app.AppModel
+import ec.donbolon.app.ai.Ai
 import ec.donbolon.app.ai.AiException
 import ec.donbolon.app.ai.Analysis
 import ec.donbolon.app.data.Fast
@@ -277,8 +278,9 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                 Step.THINKING -> Thinking(photo)
 
                 Step.COMPOSE -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
-                    if (!ai.available) {
-                        ConnectAi(model) { ai = model.ai() }
+                    // A refused key is fixed right here, without leaving the meal half written.
+                    if (!ai.available || Ai.keyRejected) {
+                        ConnectAi(model) { ai = model.ai(); error = null; if (description.isNotBlank() || photo != null) runAnalysis() }
                         Gap(16.dp)
                     }
                     Viewfinder(photo, onCamera = { shoot() }, onGallery = { pick() })
