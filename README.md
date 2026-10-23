@@ -44,6 +44,7 @@ Don Bolón es una app Android para **comer con consciencia todos los días**: re
 | 🌙 **Ayuno intermitente** | Tu ventana es libre (eliges a qué hora abre y cierra; 12:12 a 18:6 son solo atajos) y la app te **recomienda una con ciencia**: cerrar 3 h antes de dormir (Vujović et al., 2022), 8–10 h de duración y empezando cuando ya sueles comer. Incluye un contador en vivo, ideas de comida solo dentro de la ventana y Don Bolón que no te regaña por no comer cuando estás ayunando. El ayuno funciona igual que cualquier déficit; su ventaja es que a muchos les facilita sostenerlo (Lowe et al., 2020; Liu et al., 2022). |
 | 🔔 **Recordatorios** | Agua cada 2 horas solo si vas atrasado, con un botón "Tomé uno" en la misma notificación, y avisos cuando abre tu ventana y una hora antes de que cierre. |
 | ✅ **Constancia** | Cuatro hábitos diarios (registré, proteína, entrené, agua), racha hacia los 66 días de un hábito y peso suavizado para ver la tendencia real, no el agua del día. |
+| 🔑 **IA en un toque** | Pegas tu llave y listo: se conecta sola, sin buscar botones. Acepta las llaves nuevas de Google (`AQ.…`) y las clásicas (`AIza…`), prueba el modelo que sí responde y lo recuerda. Si un día la llave deja de valer, te lo dice ahí mismo donde estabas registrando, sin perder lo que escribiste, y nunca se queda cargando. |
 | 🍽️ **Mis platos** | Guardas la medida real de tus platos, bowls y vasos, y al registrar eliges en cuál serviste. La IA la usa como escala para calcular los gramos de cada alimento: las estimaciones solo por foto fallan en promedio entre 17% y 48%. |
 | 📈 **Tu curva** | Tu peso real (sin el ruido del agua), hacia dónde vas si mantienes tus calorías y cuándo llegas a tu meta. La proyección se va aplanando como en la vida real (Hall et al., 2011). Desliza el dedo para ver cada día, cambia a **cintura** o a **grasa estimada** según tu déficit, y mira tu semana y un calendario de 10 semanas por colores. |
 | 🧀 **Don Bolón te lo dice** | Más de 20 hallazgos de estudios revisados uno por uno (sueño, comer tarde, ultraprocesados, sopa antes del almuerzo, proteína, descansos de dieta…), contados con su voz y con la cifra real del paper. No están pegados en la pantalla: él los trae cuando vienen al caso (poca proteína, te pasaste, comiste por estrés, no has entrenado…). Toca su globo para ver el estudio, tócalo a él para hablarle. Si comiste sin hambre, te ofrece un SOS de 3 minutos para surfear el antojo. |
@@ -80,7 +81,7 @@ Nada es inventado. Don Bolón las cita cuando te da un consejo, y están en **Pe
 ## Privacidad y seguridad
 
 - **Tu diario no sale del teléfono.** Se guarda cifrado con AES-256-GCM y una llave que vive en el Android Keystore. La app desactiva el respaldo en la nube y la transferencia entre dispositivos.
-- **Tu llave de IA es tuya.** Se escribe dentro de la app y se guarda cifrada igual que el diario. Este repositorio no contiene ninguna llave, token ni dato personal.
+- **Tu llave de IA es tuya.** Se escribe dentro de la app y se guarda cifrada igual que el diario. Ni los mensajes de error ni los registros la muestran: como mucho dicen cómo empieza y cuántos caracteres tiene. Este repositorio no contiene ninguna llave, token ni dato personal.
 - **Solo HTTPS.** El tráfico sin cifrar está bloqueado. Lo único que se envía, y solo cuando tú pides un análisis, es la foto y tu descripción al proveedor que elegiste (Google Gemini o Anthropic Claude).
 - **Bloqueo opcional** con huella, cara o PIN.
 - **Sin IA también funciona:** la libreta offline, el menú y el coach responden con los datos locales.
@@ -92,7 +93,7 @@ Nada es inventado. Don Bolón las cita cuando te da un consejo, y están en **Pe
    ./gradlew :app:installDebug
    ```
 2. Abre la app, llena tus datos y elige tus prioridades.
-3. En **Perfil → Inteligencia artificial**, pega tu llave de [Google AI Studio](https://aistudio.google.com/apikey) o de [Anthropic](https://console.anthropic.com/). Sin llave, la app usa la libreta offline.
+3. En **Perfil → Inteligencia artificial**, pega tu llave de [Google AI Studio](https://aistudio.google.com/apikey) (gratis) o de [Anthropic](https://console.anthropic.com/). Se prueba y se conecta sola en unos segundos. Sin llave, la app usa la libreta offline.
 
 Requisitos para compilar: JDK 17 y Android SDK 36. Funciona en Android 9 o superior.
 
