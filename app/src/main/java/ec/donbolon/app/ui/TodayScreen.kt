@@ -29,6 +29,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -158,11 +161,23 @@ private fun BolonSays(tips: List<Tip>, onBolon: () -> Unit, onAction: (Tip.Actio
     var i by remember(tips.size) { mutableIntStateOf(0) }
     var why by remember { mutableStateOf(false) }
     val tip = tips[i % tips.size]
+    // What he blurts out when touched; it replaces the tip for a moment, then the tip comes back.
+    var said by remember { mutableStateOf<String?>(null) }
+    var touched by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(said) { if (said != null) { delay(3500); said = null } }
     Row(verticalAlignment = Alignment.Top) {
-        Bolon(tip.mood, 104.dp, onPoke = onBolon)
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Bolon(tip.mood, 104.dp, onReact = { said = it.line; touched++ }, onLongPress = onBolon)
+            // Until he has been touched a few times, say how; after that, just the chat button.
+            Text(
+                if (touched < 3) "Tócame · acaríciame" else "💬 Hablar",
+                color = if (touched < 3) C.faint else C.accent, fontSize = 11.sp,
+                modifier = Modifier.clip(CircleShape).clickable(onClick = onBolon).padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
         HGap(8.dp)
         Column(Modifier.weight(1f).padding(top = 6.dp).animateContentSize()) {
-            AnimatedContent(tip, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "tip") { t ->
+            AnimatedContent(said?.let { Tip(tip.mood, it) } ?: tip, transitionSpec = { fadeIn() togetherWith fadeOut() }, label = "tip") { t ->
                 Column(
                     Modifier.clip(RoundedCornerShape(topStart = 4.dp, topEnd = 20.dp, bottomEnd = 20.dp, bottomStart = 20.dp))
                         .background(C.card).clickable { why = !why }.padding(horizontal = 14.dp, vertical = 12.dp),

@@ -243,6 +243,8 @@ data class AppState(
     val meals: List<Meal> = emptyList(),
     val weights: List<WeightEntry> = emptyList(),
     val water: Map<LocalDate, Int> = emptyMap(),
+    /** Waist in cm by day: the better signal for recomposition, where weight can stay flat. */
+    val waist: Map<LocalDate, Double> = emptyMap(),
     val plans: List<IfThenPlan> = emptyList(),
     val chat: List<ChatMessage> = emptyList(),
     val settings: Settings = Settings(),
@@ -263,6 +265,7 @@ data class AppState(
         .put("meals", JSONArray(meals.map { it.toJson() }))
         .put("weights", JSONArray(weights.map { it.toJson() }))
         .put("water", JSONObject(water.mapKeys { it.key.toString() }))
+        .put("waist", JSONObject(waist.mapKeys { it.key.toString() }))
         .put("plans", JSONArray(plans.map { it.toJson() }))
         .put("chat", JSONArray(chat.takeLast(80).map { it.toJson() }))
         .put("settings", settings.toJson())
@@ -281,6 +284,7 @@ data class AppState(
                 meals = o.optJSONArray("meals").objects().map(Meal::from),
                 weights = o.optJSONArray("weights").objects().map(WeightEntry::from).sortedBy { it.date },
                 water = water?.keys()?.asSequence()?.associate { LocalDate.parse(it) to water.optInt(it) } ?: emptyMap(),
+                waist = o.optJSONObject("waist")?.let { w -> w.keys().asSequence().associate { LocalDate.parse(it) to w.optDouble(it) } } ?: emptyMap(),
                 plans = o.optJSONArray("plans").objects().map(IfThenPlan::from),
                 chat = o.optJSONArray("chat").objects().map(ChatMessage::from),
                 settings = o.optJSONObject("settings")?.let(Settings::from) ?: Settings(),

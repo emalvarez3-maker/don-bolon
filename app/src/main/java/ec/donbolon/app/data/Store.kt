@@ -133,6 +133,8 @@ class Store private constructor(private val context: Context) {
         s.copy(weights = weights, profile = s.profile.copy(weightKg = weights.last().kg))
     }
 
+    fun logWaist(cm: Double, day: LocalDate = LocalDate.now()) = edit { s -> s.copy(waist = s.waist + (day to cm)) }
+
     fun wipe() {
         photos.listFiles()?.forEach { it.delete() }
         edit { AppState(settings = it.settings) }

@@ -10,10 +10,13 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.abs
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -60,14 +63,32 @@ private val crumbs = listOf(
     Triple(118f, 84f, 3f), Triple(150f, 92f, 3f), Triple(52f, 94f, 3f), Triple(100f, 172f, 3.5f),
 )
 
+/** What Don Bolón does when touched. */
+enum class Reaction(val line: String) {
+    GROWL("¡Grrr! No me apachurres, que se me sale el queso."),
+    HOP("¡Hop! Así de liviano te quiero ver."),
+    LAUGH("Jajaja… digo, hmpf. Sigue registrando."),
+    CHEW("Ñam. ¿Tú ya comiste proteína hoy?"),
+    PETTED("…Ok, eso estuvo bonito. No le cuentes a nadie."),
+}
+
 /**
  * Don Bolón: a bolón de queso just out of the pan, drawn by hand on a 200×200 grid.
- * He breathes (the dough squashes), blinks, wobbles a cheese drip, frowns or growls with
- * his mood, steams when angry, and grumbles (shakes, shows his teeth) when poked.
- * [talking] animates the mouth while he is "speaking" or thinking.
+ * He breathes (the dough squashes), blinks, wobbles a cheese drip and frowns or smiles with
+ * his mood. When [onPoke] is set he is interactive: a tap gets a reaction (growl, hop, laugh,
+ * chew), stroking him makes him happy, dragging squishes the dough while his eyes follow the
+ * finger, and a long press calls [onLongPress]. [talking] animates the mouth.
  */
 @Composable
-fun Bolon(mood: Mood, size: Dp, modifier: Modifier = Modifier, talking: Boolean = false, onPoke: (() -> Unit)? = null) {
+fun Bolon(
+    mood: Mood,
+    size: Dp,
+    modifier: Modifier = Modifier,
+    talking: Boolean = false,
+    onPoke: (() -> Unit)? = null,
+    onReact: ((Reaction) -> Unit)? = null,
+    onLongPress: (() -> Unit)? = null,
+) {
     val loop = rememberInfiniteTransition(label = "bolon")
     val breath by loop.animateFloat(0f, 1f, infiniteRepeatable(tween(2800), RepeatMode.Reverse), label = "breath")
     val blink by loop.animateFloat(
@@ -89,10 +110,36 @@ fun Bolon(mood: Mood, size: Dp, modifier: Modifier = Modifier, talking: Boolean 
         label = "look",
     )
 
-    var poked by remember { mutableStateOf(false) }
+    var reaction by remember { mutableStateOf<Reaction?>(null) }
+    var lastTap by remember { mutableStateOf<Reaction?>(null) }
     val shake = remember { Animatable(0f) }
+    val hop = remember { Animatable(0f) }
+    val squishX = remember { Animatable(0f) }
+    val squishY = remember { Animatable(0f) }
+    var finger by remember { mutableStateOf<Offset?>(null) }
+    var stroke by remember { mutableStateOf(0f) }
     val scope = rememberCoroutineScope()
-    val shown = if (poked) Mood.ANGRY else mood
+    val shown = when (reaction) {
+        Reaction.GROWL -> Mood.ANGRY
+        Reaction.HOP, Reaction.LAUGH, Reaction.PETTED -> Mood.HAPPY
+        Reaction.CHEW -> Mood.EATING
+        null -> mood
+    }
+
+    fun play(r: Reaction) {
+        reaction = r
+        onReact?.invoke(r)
+        scope.launch {
+            when (r) {
+                Reaction.GROWL -> { repeat(6) { i -> shake.animateTo(if (i % 2 == 0) 6f else -6f, tween(55)) }; shake.animateTo(0f, tween(80)) }
+                Reaction.HOP -> { hop.animateTo(1f, tween(170)); hop.animateTo(0f, spring(dampingRatio = 0.35f, stiffness = 300f)) }
+                Reaction.LAUGH -> repeat(4) { i -> shake.animateTo(if (i % 2 == 0) 3f else -3f, tween(90)) }.also { shake.animateTo(0f, tween(90)) }
+                Reaction.CHEW, Reaction.PETTED -> {}
+            }
+            delay(if (r == Reaction.CHEW) 1400 else 1100)
+            reaction = null
+        }
+    }
 
     // Mood → face parameters, eased so expressions morph instead of snapping.
     val browTilt by animateFloatAsState(
@@ -108,26 +155,55 @@ fun Bolon(mood: Mood, size: Dp, modifier: Modifier = Modifier, talking: Boolean 
     val growl by animateFloatAsState(if (shown == Mood.ANGRY) 1f else 0f, tween(300), label = "growl")
     val blush by animateFloatAsState(if (shown == Mood.PROUD || shown == Mood.HAPPY) 1f else 0f, tween(600), label = "blush")
 
-    val tap = if (onPoke == null) Modifier else Modifier.clickable(remember { MutableInteractionSource() }, indication = null) {
-        onPoke()
-        scope.launch {
-            poked = true
-            repeat(6) { i -> shake.animateTo(if (i % 2 == 0) 6f else -6f, tween(55)) }
-            shake.animateTo(0f, tween(80))
-            delay(900)
-            poked = false
+    val touch = if (onPoke == null && onReact == null && onLongPress == null) Modifier else Modifier
+        .pointerInput(Unit) {
+            detectTapGestures(
+                onTap = {
+                    onPoke?.invoke()
+                    // Never the same reaction twice in a row, so poking him stays fun.
+                    val next = listOf(Reaction.GROWL, Reaction.HOP, Reaction.LAUGH, Reaction.CHEW).filter { it != lastTap }.random()
+                    lastTap = next
+                    play(next)
+                },
+                onLongPress = { onLongPress?.invoke() },
+            )
         }
-    }
+        .pointerInput(Unit) {
+            detectDragGestures(
+                onDragStart = { finger = it; stroke = 0f },
+                onDragEnd = {
+                    finger = null
+                    scope.launch { squishX.animateTo(0f, spring(dampingRatio = 0.3f, stiffness = 260f)) }
+                    scope.launch { squishY.animateTo(0f, spring(dampingRatio = 0.3f, stiffness = 260f)) }
+                    // A real stroke (not a nudge) counts as petting.
+                    if (stroke > this.size.width * 0.9f) play(Reaction.PETTED)
+                },
+                onDragCancel = { finger = null; scope.launch { squishX.snapTo(0f); squishY.snapTo(0f) } },
+            ) { change, drag ->
+                finger = change.position
+                stroke += drag.getDistance()
+                val w = this.size.width.toFloat()
+                scope.launch { squishX.snapTo((squishX.value + drag.x / w).coerceIn(-0.25f, 0.25f)) }
+                scope.launch { squishY.snapTo((squishY.value + drag.y / w).coerceIn(-0.2f, 0.2f)) }
+            }
+        }
 
-    Canvas(modifier.size(size).then(tap)) {
+    Canvas(modifier.size(size).then(touch)) {
         val u = this.size.minDimension / 200f
         val mouthOpen = if (shown == Mood.EATING || talking) 0.25f + 0.75f * chew else 0f
+        // The eyes follow the finger while it is on him.
+        val eyes = finger?.let { ((it.x / this.size.width - 0.5f) * 9f).coerceIn(-4f, 4f) } ?: look
         withTransform({
-            rotate(shake.value + wobble, Offset(100 * u, 186 * u))
-            // Dough squash: a little wider and shorter on each breath out.
-            scale(1f + 0.015f * breath, 1f - 0.02f * breath, Offset(100 * u, 186 * u))
+            translate(squishX.value * 40 * u, -26 * u * hop.value + squishY.value * 20 * u)
+            rotate(shake.value + wobble + squishX.value * 18f, Offset(100 * u, 186 * u))
+            // Dough squash: breathing, plus the stretch from being dragged.
+            scale(
+                1f + 0.015f * breath + abs(squishX.value) * 0.5f - abs(squishY.value) * 0.3f,
+                1f - 0.02f * breath - abs(squishX.value) * 0.35f + squishY.value * 0.5f,
+                Offset(100 * u, 186 * u),
+            )
         }) {
-            drawBolon(u, browTilt, rightBrowLift, smile, (eyeOpenBase * blink).coerceAtLeast(0.05f), look, drip, growl, blush, mouthOpen, shown, drift)
+            drawBolon(u, browTilt, rightBrowLift, smile, (eyeOpenBase * blink).coerceAtLeast(0.05f), eyes, drip, growl, blush, mouthOpen, shown, drift)
         }
     }
 }
