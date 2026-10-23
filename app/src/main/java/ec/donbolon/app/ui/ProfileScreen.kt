@@ -79,6 +79,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
     var windowHours by remember { mutableStateOf(p0.windowHours) }
     var sleepHour by remember { mutableStateOf(p0.sleepHour) }
     var showAdvice by remember { mutableStateOf(false) }
+    var addingDish by remember { mutableStateOf(false) }
     var windowStart by remember { mutableStateOf(p0.windowStart) }
 
     fun num(s: String) = s.replace(',', '.').toDoubleOrNull()
@@ -272,6 +273,31 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
 
             if (!onboarding) {
                 Gap(22.dp)
+                Label("Mis platos")
+                Text(
+                    "Mide tus platos (diámetro de borde a borde) y tus bowls o vasos. La IA usa esa medida real como escala y calcula mejor cuánto hay de cada alimento.",
+                    color = C.muted, fontSize = 13.sp,
+                )
+                Gap(6.dp)
+                state.dishes.forEach { d ->
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text(d.name, fontSize = 14.sp)
+                            Text(d.kind.label, color = C.faint, fontSize = 11.sp)
+                        }
+                        val step = if (d.kind == ec.donbolon.app.data.Dish.Kind.PLATO) 1.0 else 25.0
+                        Stepper(
+                            { model.store.edit { s -> s.copy(dishes = s.dishes.map { if (it.id == d.id) it.copy(size = (it.size - step).coerceAtLeast(step)) else it }) } },
+                            { model.store.edit { s -> s.copy(dishes = s.dishes.map { if (it.id == d.id) it.copy(size = it.size + step) else it }) } },
+                        ) { Text("${d.size.toInt()} ${d.kind.unit}", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 8.dp)) }
+                        if (state.dishes.size > 1) IconButton({ model.store.edit { s -> s.copy(dishes = s.dishes.filterNot { it.id == d.id }) } }, Modifier.size(32.dp)) {
+                            Icon(Icons.Filled.Close, "Quitar", tint = C.faint, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+                QuietButton("+ Añadir plato o bowl") { addingDish = true }
+
+                Gap(22.dp)
                 Label("Lo que Don Bolón sabe de ti")
                 Gap(6.dp)
                 if (state.memories.isEmpty()) {
@@ -331,6 +357,34 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
         Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
             PrimaryButton(if (onboarding) "Empezar" else "Guardar", enabled = valid) { save() }
         }
+    }
+
+    if (addingDish) {
+        var name by remember { mutableStateOf("") }
+        var kind by remember { mutableStateOf(ec.donbolon.app.data.Dish.Kind.PLATO) }
+        var size by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { addingDish = false },
+            containerColor = C.card,
+            title = { Text("Nuevo plato") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Field(name, { name = it }, "Nombre (ej. plato azul de la abuela)")
+                    FlowChips(ec.donbolon.app.data.Dish.Kind.entries.map { it.label }, kind.label) { l -> kind = ec.donbolon.app.data.Dish.Kind.entries.first { it.label == l } }
+                    Field(size, { size = it }, if (kind == ec.donbolon.app.data.Dish.Kind.PLATO) "Diámetro en cm" else "Capacidad en ml", number = true)
+                }
+            },
+            confirmButton = {
+                QuietButton("Guardar") {
+                    val v = size.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 && it < 5000 }
+                    if (name.isNotBlank() && v != null) {
+                        model.store.edit { it.copy(dishes = it.dishes + ec.donbolon.app.data.Dish(java.util.UUID.randomUUID().toString(), name.trim(), kind, v)) }
+                        addingDish = false
+                    }
+                }
+            },
+            dismissButton = { QuietButton("Cancelar", color = C.muted) { addingDish = false } },
+        )
     }
 
     if (wipe) AlertDialog(

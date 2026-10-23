@@ -8,94 +8,118 @@ data class Tip(val mood: Mood, val text: String, val source: String? = null, val
     enum class Action(val label: String) { CAPTURE("Registrar"), SOS("3 minutos"), CHAT("¿Qué como?") }
 }
 
-/** One evidence-based principle the app is built on; Don Bolón brings them up one at a time. */
-data class Principle(val title: String, val body: String, val tryThis: String, val source: String)
+/**
+ * One finding from the literature, told the way Don Bolón talks. Every number was checked
+ * against the paper's abstract; where a figure is shaky or the sample is narrow, the line says so.
+ */
+data class Principle(val title: String, val line: String, val source: String)
 
 object Science {
     val principles = listOf(
         Principle(
-            "Registrar es la intervención",
-            "Anotar lo que comes es el predictor más constante de bajar de peso: quienes registran con regularidad pierden más, aunque el registro no sea perfecto. Lo que cuenta es la constancia, no la precisión.",
-            "Registra aunque sea con una foto rápida. Un registro aproximado vale más que ninguno.",
-            "Burke, Wang & Sevick (2011), J Am Diet Assoc; Harvey et al. (2019), Obesity",
+            "Registrar",
+            "No te pido ser contador. En 22 estudios, los que más registraban eran los que más bajaban, aunque anotaran mal. Una foto chueca vale más que una comida olvidada.",
+            "Burke, Wang & Sevick (2011), J Am Diet Assoc",
         ),
         Principle(
-            "Planes Si-Entonces",
-            "Decidir de antemano qué harás ante una situación concreta duplica o triplica la probabilidad de cumplir una meta. El cerebro ejecuta el plan sin tener que pelear con la fuerza de voluntad.",
-            "\"Si llego a casa con hambre a las 6, entonces como yogur con fruta antes de cocinar.\"",
-            "Gollwitzer & Sheeran (2006), Advances in Experimental Social Psychology (meta-análisis, 94 estudios)",
+            "La báscula",
+            "En un ensayo con pesaje diario, el 43% bajó al menos 5% de su peso; en el grupo sin báscula, el 7%. Y no les dio más ansiedad. Pésate, pero cree en la línea, no en el número del día.",
+            "Steinberg et al. (2013), Obesity; Steinberg et al. (2014), Am J Prev Med",
         ),
         Principle(
-            "Los hábitos tardan ~66 días",
-            "Una conducta se vuelve automática en promedio en 66 días (rango 18–254). Saltarse un día no arruina el proceso; lo que importa es volver al siguiente.",
-            "No busques racha perfecta: busca no fallar dos veces seguidas.",
-            "Lally et al. (2010), European Journal of Social Psychology",
+            "Dormir",
+            "Dormir poco te hace comer unas 385 kcal más al día sin gastar más. Son como cuatro panes y medio que nadie te invitó. La almohada también hace dieta.",
+            "Al Khatib et al. (2018), Eur J Clin Nutr (meta-análisis)",
         ),
         Principle(
-            "Restricción flexible, no rígida",
-            "Las dietas de todo-o-nada (\"prohibido el pan\") se asocian a más atracones y más peso. La restricción flexible (\"pan, pero medido\") se asocia a mejor control y menos ansiedad.",
-            "Ningún alimento está prohibido. Cabe en tus calorías o se ajusta en la siguiente comida.",
-            "Westenhoefer et al. (1999), Appetite; Smith et al. (1999), Int J Obesity",
+            "Comer tarde",
+            "Mismas calorías, pero más tarde: más hambre al día siguiente y menos gasto de energía. Por eso tu cocina cierra con tu ventana, no a medianoche.",
+            "Vujović et al. (2022), Cell Metabolism",
         ),
         Principle(
-            "El efecto \"qué más da\"",
-            "Cuando alguien a dieta siente que \"ya rompió\" el plan, tiende a comer todavía más. La autocompasión después de un desliz reduce ese rebote.",
-            "Después de pasarte: \"Fue una comida, no mi identidad\". La siguiente comida es normal, sin castigo.",
-            "Polivy & Herman (1985); Adams & Leary (2007), J Social & Clinical Psychology",
-        ),
-        Principle(
-            "Hambre física vs. emocional",
-            "El hambre física sube poco a poco, la sacia casi cualquier comida y se siente en el estómago. La emocional llega de golpe, pide algo específico y no se calma al llenarte. Ponerle nombre a la emoción baja su intensidad.",
-            "Antes de comer, puntúa tu hambre de 1 a 10. Si es menor a 4, pregunta: ¿qué siento realmente?",
-            "Lieberman et al. (2007), Psychological Science (affect labeling); escala de hambre de Craighead",
-        ),
-        Principle(
-            "Surfear el antojo",
-            "Los antojos suben, llegan a un pico y bajan solos en minutos si no los alimentas. Observarlos con curiosidad, sin luchar, reduce el consumo de lo que se antoja.",
-            "Usa el temporizador SOS: 3 minutos respirando y describiendo el antojo como una ola.",
-            "Bowen & Marlatt (2009); Lacaille et al. (2014), Eating Behaviors",
-        ),
-        Principle(
-            "Proteína y fibra sacian",
-            "La proteína es el macronutriente que más saciedad produce y protege el músculo en déficit. La fibra y los alimentos con mucha agua (verduras, sopas, fruta) llenan con pocas calorías.",
-            "Arma cada plato con: ½ verduras, ¼ proteína, ¼ almidón.",
-            "Leidy et al. (2015), Am J Clin Nutr; Rolls (2009), Physiology & Behavior (densidad energética)",
-        ),
-        Principle(
-            "Cuadritos: recomposición",
-            "Con pesas, proteína alta (≈2.2 g/kg) y un déficit pequeño se puede perder grasa y ganar músculo al mismo tiempo, sobre todo si eres principiante o vuelves a entrenar. Los abdominales no queman la grasa local: la panza baja con el déficit total.",
-            "Entrena fuerza 3–5 veces por semana, progresa en peso o repeticiones y duerme 7–9 h.",
-            "Barakat et al. (2020), Strength & Conditioning Journal; Vispute et al. (2011), J Strength Cond Res",
-        ),
-        Principle(
-            "Ultraprocesados: comes más sin notarlo",
-            "En un ensayo controlado, la misma persona comió ~500 kcal más al día con ultraprocesados que con comida casera, aunque ambas dietas tenían iguales macros disponibles.",
-            "Cuando puedas, elige el alimento que tu abuela reconocería.",
+            "Ultraprocesados",
+            "Con comida ultraprocesada la gente comió 508 kcal más al día que con comida de verdad, aunque podían elegir igual. La diferencia no fue la fuerza de voluntad: fue la fábrica.",
             "Hall et al. (2019), Cell Metabolism",
         ),
         Principle(
-            "Comer atento",
-            "Comer distraído (pantallas) aumenta lo que comes en esa comida y en la siguiente. Comer despacio da tiempo a las señales de saciedad (~20 min).",
-            "Una comida al día sin pantalla. Deja el cubierto entre bocado y bocado.",
+            "La sopa primero",
+            "Un plato de sopa de verduras antes del almuerzo y terminas comiendo 20% menos en total, sopa incluida. El locro de la abuela tenía razón (el chicharrón encima, no tanto).",
+            "Flood & Rolls (2007), Appetite",
+        ),
+        Principle(
+            "Agua antes de comer",
+            "Medio litro de agua antes de cada comida: en 12 semanas bajaron 2 kg más que solo con dieta. Ojo, fue en adultos de 55 a 75; en jóvenes la evidencia es menor, pero tampoco te hace daño.",
+            "Dennis et al. (2010), Obesity",
+        ),
+        Principle(
+            "Moverse sin gimnasio",
+            "Les dieron 1000 kcal de más por 8 semanas: los que se movían más sin 'hacer ejercicio' (caminar, pararse, moverse) guardaron mucho menos grasa. Ir a pie a la tienda sí cuenta.",
+            "Levine, Eberhardt & Jensen (1999), Science",
+        ),
+        Principle(
+            "Cuánta proteína",
+            "Hacia 1,6 g por kilo ya ves casi todo el beneficio para el músculo; en déficit conviene acercarse a 2,2, porque el margen del estudio llega hasta ahí. Más no te hace más fuerte, te hace más lleno.",
+            "Morton et al. (2018), Br J Sports Med (49 estudios)",
+        ),
+        Principle(
+            "Músculo y grasa a la vez",
+            "Con 2,4 g/kg de proteína, pesas fuertes y un déficit grande, jóvenes ganaron músculo mientras perdían grasa en solo 4 semanas. Los cuadritos se construyen y se destapan al mismo tiempo.",
+            "Longland et al. (2016), Am J Clin Nutr",
+        ),
+        Principle(
+            "Despacio no es flojo",
+            "Atletas que bajaron 0,7% de su peso por semana ganaron músculo; los que bajaron 1,4% no. Ir lento es la estrategia, no la excusa.",
+            "Garthe et al. (2011), Int J Sport Nutr Exerc Metab",
+        ),
+        Principle(
+            "Descansos de dieta",
+            "Hombres que alternaron 2 semanas de dieta con 2 de mantenimiento perdieron más grasa (12,3 vs 8,0 kg) que los que no pararon nunca. Descansar de la dieta también es parte del plan.",
+            "Byrne et al. (2018), Int J Obesity (estudio MATADOR)",
+        ),
+        Principle(
+            "66 días",
+            "Un hábito tarda en promedio 66 días en volverse automático, aunque hubo gente que lo logró en 18 y otros en 254. Fallar un día no borró nada; lo que pesa es no volver.",
+            "Lally et al. (2010), Eur J Soc Psychol",
+        ),
+        Principle(
+            "Si pasa esto, hago esto",
+            "Decidir antes qué harás en una situación concreta tiene un efecto entre medio y grande sobre cumplir metas, en 94 estudios. Tu cerebro sigue el plan sin pedirle permiso a la fuerza de voluntad.",
+            "Gollwitzer & Sheeran (2006), Adv Exp Soc Psychol (d≈0,65)",
+        ),
+        Principle(
+            "Nada prohibido",
+            "Las dietas de todo o nada se asocian a más atracones; las flexibles, a mejor control con menos ansiedad. El pan no es el enemigo. El enemigo es el 'ya la regué, ahora todo'.",
+            "Westenhoefer et al. (1999), Appetite",
+        ),
+        Principle(
+            "Después de un desliz",
+            "A gente a dieta le dieron una dona y luego le dijeron 'a todos nos pasa': comieron menos dulces después que los que se quedaron con la culpa. La culpa engorda más que la dona.",
+            "Adams & Leary (2007), J Soc Clin Psychol",
+        ),
+        Principle(
+            "Surfear el antojo",
+            "Mirar el antojo como una ola que sube y baja, sin pelearle, redujo los antojos de cigarrillo y, en otro programa, los de comida. Tres minutos y la ola pasa sola.",
+            "Bowen & Marlatt (2009), Psychol Addict Behav; Alberts et al. (2012), Appetite",
+        ),
+        Principle(
+            "Proteína que llena",
+            "La proteína es lo que más sacia por caloría y protege el músculo cuando comes menos. Si te da hambre a media tarde, revisa cuánta proteína hubo en el almuerzo.",
+            "Leidy et al. (2015), Am J Clin Nutr",
+        ),
+        Principle(
+            "Sin pantallas",
+            "Comer distraído hace que comas más en esa comida y todavía más en la siguiente, según 24 estudios. Una comida al día sin celular. El TikTok no tiene calorías, pero las suma.",
             "Robinson et al. (2013), Am J Clin Nutr (meta-análisis)",
         ),
         Principle(
-            "Dormir poco da hambre",
-            "Dormir mal sube la grelina y baja la leptina: más hambre y más antojos de comida densa al día siguiente (+~385 kcal).",
-            "Si dormiste poco, planifica el snack de la tarde antes de que llegue el antojo.",
-            "Spiegel et al. (2004), Annals of Internal Medicine; Al Khatib et al. (2017), Eur J Clin Nutr",
+            "Despacio en la mesa",
+            "Comiendo despacio, mujeres comieron unas 70 kcal menos en la misma comida y se sintieron igual de llenas. Suelta la cuchara entre bocado y bocado.",
+            "Andrade, Greene & Melanson (2008), J Am Diet Assoc",
         ),
         Principle(
-            "El entorno gana a la voluntad",
-            "Lo que está a la vista y a mano se come más. Cambiar el entorno (fruta visible, dulces guardados, porciones servidas en plato) funciona mejor que resistir.",
-            "Sirve en plato, nunca directo de la bolsa. Guarda los snacks fuera de la vista.",
-            "Hollands et al. (2015), Cochrane Review (tamaño de porción); Wood & Neal (2016)",
-        ),
-        Principle(
-            "Pésate seguido, mira la tendencia",
-            "Pesarse con frecuencia ayuda a mantener el peso, siempre que se interprete la tendencia y no el número del día (el agua mueve 1–2 kg).",
-            "Pésate en ayunas, mira la línea suave, no el punto.",
-            "Zheng et al. (2015), Obesity Reviews",
+            "La cintura cuenta",
+            "La cintura dice más de tu salud que el peso solo; un panel internacional pidió medirla como un signo vital. Si baja aunque la báscula no se mueva, estás ganando músculo.",
+            "Ross et al. (2020), Nat Rev Endocrinol (consenso)",
         ),
     )
 
@@ -116,9 +140,16 @@ object Science {
         val water = state.water[today] ?: 0
         val out = mutableListOf<Tip>()
 
+        // Several ways to say the same thing, rotating by day, so he never sounds like a recording.
+        fun pick(vararg lines: String) = lines[(today.toEpochDay() % lines.size).toInt()]
+
         if (now.hour >= 23 || now.hour < 5) out += Tip(
-            Mood.SLEEPY, "Grrr… ya es tarde, $name. La cocina cerró. Dormir poco da más hambre mañana: agua y a la cama.",
-            "Dormir mal sube la grelina y los antojos (Spiegel et al., 2004)",
+            Mood.SLEEPY, pick(
+                "Grrr… ya es tarde, $name. Dormir poco te cobra unas 385 kcal de hambre mañana. La cama, ya.",
+                "Hmpf. A esta hora el único bolón despierto soy yo. Apaga eso: dormir también te marca el abdomen.",
+                "La cocina cerró y yo también. Si te da hambre, es sueño disfrazado. Agua y a dormir.",
+            ),
+            "Dormir poco suma ~385 kcal al día (Al Khatib et al., 2018, meta-análisis)",
         )
         val focus = state.focus?.takeIf { it.weekStart == Memory.monday(today) }
         if (focus != null && today.dayOfWeek == java.time.DayOfWeek.MONDAY) out += Tip(
@@ -126,79 +157,116 @@ object Science {
             "Una meta concreta rinde más que varias vagas (Locke & Latham, 2002)",
         )
         if (meals.isEmpty() && yesterday > targets.kcal * 1.15) out += Tip(
-            Mood.GRUMPY, "Ayer te pasaste. ¿Y? Hoy se come normal. Nada de compensar con hambre: eso es lo que trae el rebote.",
-            "La autocompasión tras un desliz reduce comer de más (Adams & Leary, 2007)",
+            Mood.CALM, pick(
+                "Ayer te pasaste. ¿Y? Hoy se come normal. Si castigas con hambre, el rebote cobra con intereses.",
+                "Lo de ayer ya es historia, no destino. Hoy, comida normal y a seguir. La culpa engorda más que el postre.",
+            ),
+            "Tras un desliz, la autocompasión reduce comer de más (Adams & Leary, 2007)",
         )
         val fast = Fast.state(state, now.atDate(today))
         if (fast != null && !fast.eating) out += Tip(
-            Mood.CALM, "Vas ${"%.0f".format(fast.hoursFasted)} h de ayuno y tu ventana abre en ${Fast.format(fast.minutesToChange)}. Agua, café negro o té sin azúcar no lo rompen.",
-            "El ayuno rinde igual que cualquier déficit; su ventaja es que a muchos les facilita sostenerlo (Lowe et al., 2020; Liu et al., 2022)",
+            Mood.CALM, "Vas ${"%.0f".format(fast.hoursFasted)} h de ayuno; tu ventana abre en ${Fast.format(fast.minutesToChange)}. " + pick(
+                "Agua, café negro o té sin azúcar no lo rompen.",
+                "Si te ruge la panza, medio litro de agua: muchas veces es sed.",
+                "El ayuno no quema más que cualquier déficit; te sirve si te ayuda a comer menos sin sufrir.",
+            ),
+            "El ayuno rinde igual que contar calorías; su ventaja es la adherencia (Lowe et al., 2020; Liu et al., 2022)",
         )
         if (fast != null && fast.eating && meals.isEmpty()) out += Tip(
-            Mood.HAPPY, "¡Ventana abierta! Rompe el ayuno con proteína y verduras, no con pan dulce: te mantiene lleno hasta la siguiente.",
-            "La proteína es lo que más sacia (Leidy et al., 2015)", Tip.Action.CHAT,
+            Mood.HAPPY, pick(
+                "¡Ventana abierta! Rompe el ayuno con proteína y verduras: llegas lleno hasta la siguiente.",
+                "Se abrió la cocina. Un caldo o ensalada primero y luego la proteína: comerás menos sin pelear.",
+            ),
+            "La proteína sacia más (Leidy et al., 2015); una sopa antes reduce 20% lo que comes (Flood & Rolls, 2007)", Tip.Action.CHAT,
         )
         if (fast != null && fast.eating && fast.minutesToChange <= 90 && t.protein < targets.protein * 0.7) out += Tip(
-            Mood.GRUMPY, "Tu ventana cierra en ${Fast.format(fast.minutesToChange)} y te faltan ${(targets.protein - t.protein).toInt()} g de proteína. Que la última comida sea fuerte en proteína.",
-            "Con menos horas para comer, la proteína es lo primero que se queda corta (Lowe et al., 2020)",
+            Mood.GRUMPY, "Tu ventana cierra en ${Fast.format(fast.minutesToChange)} y te faltan ${(targets.protein - t.protein).toInt()} g de proteína. Que la última comida sea de las que construyen músculo.",
+            "Con menos horas para comer, la proteína es lo que primero se queda corta (Lowe et al., 2020)",
         )
         // While fasting there is nothing to log yet, so no nagging.
         if (meals.isEmpty() && (fast == null || fast.eating)) out += if (now.hour >= 11) Tip(
-            Mood.GRUMPY, "¿Nada registrado todavía? Grrr. No te pido perfección, te pido una foto.",
+            Mood.GRUMPY, pick(
+                "¿Nada registrado todavía? Grrr. No te pido perfección, te pido una foto.",
+                "Plato que no se registra igual cuenta. Tómale foto.",
+                "En 22 estudios, los que registraban bajaban más. Tú todavía vas en cero hoy. Hmpf.",
+            ),
             "Registrar con constancia es lo que más predice el resultado (Burke et al., 2011)", Tip.Action.CAPTURE,
-        ) else Tip(Mood.CALM, "Hmpf. Buenos días, $name. Cuando comas algo, me lo enseñas. Yo vigilo.", null, Tip.Action.CAPTURE)
+        ) else Tip(
+            Mood.CALM,
+            pick("Hmpf. Buenos días, $name. Cuando comas algo, me lo enseñas.", "Buen día. Yo vigilo; tú comes y me muestras.", "Arriba, $name. Hoy toca hacerlo simple: comer, foto, seguir."),
+            null, Tip.Action.CAPTURE,
+        )
 
         // Praise right after the behavior: immediate reward is what makes a habit stick (Wood & Neal, 2016).
         val last = meals.lastOrNull()
         if (last != null && last.totals.protein >= 30 && last.totals.kcal <= targets.kcal * 0.45) out += Tip(
-            Mood.HAPPY, "¡Eso! ${last.totals.protein.toInt()} g de proteína en esa comida y sin pasarte. Así se ven los cuadritos llegar.",
-            "La proteína repartida en cada comida favorece el músculo (Areta et al., 2013)",
+            Mood.HAPPY, pick(
+                "¡Eso! ${last.totals.protein.toInt()} g de proteína en esa comida y sin pasarte. Así se construyen los cuadritos.",
+                "${last.totals.protein.toInt()} g de proteína. Hmpf… está bien, lo admito: esa comida estuvo de campeonato.",
+            ),
+            "Proteína repartida en cada comida favorece el músculo (Areta et al., 2013)",
         )
         val lastReason = meals.lastOrNull()?.reason
         if (lastReason != null && !lastReason.physical) out += Tip(
-            Mood.GRUMPY, "La última fue por ${lastReason.label.lowercase()}, no por hambre. La próxima vez que te pase, aguanta 3 minutos conmigo antes.",
-            "Los antojos suben y bajan solos como olas (Bowen & Marlatt, 2009)", Tip.Action.SOS,
+            Mood.CALM, "La última fue por ${lastReason.label.lowercase()}, no por hambre. La próxima vez, tres minutos conmigo antes: la ola sube y baja sola.",
+            "Surfear el antojo lo reduce (Bowen & Marlatt, 2009; Alberts et al., 2012)", Tip.Action.SOS,
         )
         if (left < -targets.kcal * targets.band) out += Tip(
-            Mood.GRUMPY, "Te pasaste ${(-left).toInt()} kcal. Respira. Una comida no decide nada; lo que daña es el \"ya qué más da\".",
+            Mood.GRUMPY, pick(
+                "Te pasaste ${(-left).toInt()} kcal. Respira. Una comida no decide nada; lo que daña es el \"ya la regué, ahora todo\".",
+                "${(-left).toInt()} kcal arriba. No es tragedia, es un dato. Mañana, normal; nada de compensar.",
+            ),
             "El efecto \"qué más da\" en dietas (Polivy & Herman, 1985)",
         )
         if (state.profile.priorities.muscle >= 0.5 && today !in state.workouts && now.hour in 16..21 &&
             Nutrition.workoutsThisWeek(state) < state.profile.trainDays
         ) out += Tip(
-            Mood.GRUMPY, "¿Y el entreno? Los cuadritos se descubren en la cocina, pero se construyen con pesas. Llevas ${Nutrition.workoutsThisWeek(state)} de ${state.profile.trainDays} esta semana.",
-            "Cada músculo ≥ 2 veces por semana (Schoenfeld et al., 2016)",
+            Mood.GRUMPY, pick(
+                "¿Y el entreno? Los cuadritos se destapan en la cocina, pero se construyen con pesas. Llevas ${Nutrition.workoutsThisWeek(state)} de ${state.profile.trainDays}.",
+                "En déficit, las pesas le dicen a tu cuerpo que el músculo no se toca. Llevas ${Nutrition.workoutsThisWeek(state)} de ${state.profile.trainDays} esta semana.",
+            ),
+            "Con proteína alta y pesas se gana músculo aun en déficit (Longland et al., 2016)",
         )
         if (meals.isNotEmpty() && Nutrition.onTarget(t.kcal, targets.kcal, targets.band) && t.protein >= targets.protein * 0.9) out += Tip(
-            Mood.HAPPY, "…Bien hecho. No te acostumbres a que lo diga. Calorías en rango y proteína cumplida.",
+            Mood.HAPPY, pick(
+                "…Bien hecho. No te acostumbres a que lo diga. Calorías en rango y proteína cumplida.",
+                "Día redondo. Hmpf. Hasta se me escurrió el queso de la emoción.",
+            ),
         )
         if (meals.isNotEmpty() && t.protein < targets.protein * 0.5 && now.hour >= 14) out += Tip(
             Mood.GRUMPY, "Llevas ${t.protein.toInt()} g de proteína de ${targets.protein}. Ni un bolón vive solo de verde: pollo, huevo, atún o chochos en la siguiente.",
-            "La proteína es lo que más sacia y protege el músculo (Leidy et al., 2015)",
+            "La proteína es lo que más sacia por caloría (Leidy et al., 2015)",
         )
         if (meals.size >= 2 && t.fiber < targets.fiber * 0.4 && now.hour >= 17) out += Tip(
             Mood.CALM, "Poca fibra hoy (${t.fiber.toInt()} g). Media porción de verduras o una fruta en la cena y listo.",
-            "25–30 g de fibra se asocian a menos enfermedad (Reynolds et al., 2019)",
+            "25–30 g de fibra al día se asocian a menos enfermedad (Reynolds et al., 2019, The Lancet)",
         )
         if (now.hour in 15..20 && water < targets.waterGlasses / 3) out += Tip(
-            Mood.CALM, "Llevas $water vasos de agua. A veces la \"hambre\" de la tarde es sed. Toma uno y vuelve a preguntarte.",
+            Mood.CALM, "Llevas $water vasos de agua. Medio litro antes de la próxima comida: en un ensayo, eso ayudó a bajar 2 kg más en 12 semanas.",
+            "Dennis et al. (2010), Obesity (adultos de 55–75 años)",
         )
         if (streak in listOf(3, 7, 14, 21, 30, 45, 66) && meals.isNotEmpty()) out += Tip(
-            Mood.HAPPY, "$streak días seguidos registrando. Hmpf. Así es como un hábito se vuelve automático.",
-            "En promedio un hábito tarda 66 días (Lally et al., 2010)",
+            Mood.HAPPY, "$streak días seguidos registrando. Hmpf. Así es como un hábito deja de costar.",
+            "En promedio un hábito tarda 66 días, con un rango de 18 a 254 (Lally et al., 2010)",
         )
         if (meals.isNotEmpty() && meals.none { it.mindful } && now.hour in 11..15) out += Tip(
-            Mood.CALM, "Hoy come una vez sin celular. Despacio. Notarás que te llenas antes.",
-            "Comer distraído aumenta lo que comes (Robinson et al., 2013)",
+            Mood.CALM, pick(
+                "Hoy come una vez sin celular. Comer distraído te hace comer más… y también en la siguiente comida.",
+                "Suelta la cuchara entre bocado y bocado. Comiendo despacio se comen unas 70 kcal menos y llenas igual.",
+            ),
+            "Robinson et al. (2013), Am J Clin Nutr; Andrade et al. (2008), J Am Diet Assoc",
         )
-        if (meals.isNotEmpty() && left > 0) out += Tip(Mood.CALM, "Te quedan ${left.toInt()} kcal. Úsalas con cabeza, no con antojo.", null, Tip.Action.CHAT)
+        if (meals.isNotEmpty() && left > 0) out += Tip(
+            Mood.CALM, pick("Te quedan ${left.toInt()} kcal. Úsalas con cabeza, no con antojo.", "Quedan ${left.toInt()} kcal en la cuenta. ¿Te armo algo con buena proteína?"),
+            null, Tip.Action.CHAT,
+        )
         if (focus != null && today.dayOfWeek != java.time.DayOfWeek.MONDAY) out += Tip(
             Mood.CALM, "Recuerda el enfoque de la semana: ${focus.title.lowercase()}. ${focus.plan}",
-            "Planes Si-Entonces duplican la probabilidad de cumplir (Gollwitzer & Sheeran, 2006)",
+            "Planear \"si pasa esto, hago esto\" tiene un efecto medio-grande sobre cumplir metas (Gollwitzer & Sheeran, 2006)",
         )
         // Always end with one principle from the library, so there is something new each day.
         val p = tipOfDay()
-        out += Tip(Mood.CALM, "${p.title}. ${p.tryThis}", p.source)
+        out += Tip(Mood.CALM, p.line, p.source)
         return out
     }
 

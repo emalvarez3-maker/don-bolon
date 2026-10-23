@@ -176,7 +176,7 @@ fun Bolon(
                     scope.launch { squishX.animateTo(0f, spring(dampingRatio = 0.3f, stiffness = 260f)) }
                     scope.launch { squishY.animateTo(0f, spring(dampingRatio = 0.3f, stiffness = 260f)) }
                     // A real stroke (not a nudge) counts as petting.
-                    if (stroke > this.size.width * 0.9f) play(Reaction.PETTED)
+                    if (stroke > this.size.width * 0.6f) play(Reaction.PETTED)
                 },
                 onDragCancel = { finger = null; scope.launch { squishX.snapTo(0f); squishY.snapTo(0f) } },
             ) { change, drag ->

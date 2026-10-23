@@ -47,7 +47,7 @@ class Ai(private val provider: Provider, private val key: String) {
      * [answer] is the user's reply to the question a previous pass asked, so a second pass can
      * correct the first one instead of starting over.
      */
-    fun analyze(photo: Bitmap?, description: String, cooking: String?, context: String, previous: Analysis? = null, answer: String = ""): Analysis {
+    fun analyze(photo: Bitmap?, description: String, cooking: String?, context: String, previous: Analysis? = null, answer: String = "", dish: String? = null): Analysis {
         val ask = buildString {
             append("Analiza esta comida y estima sus nutrientes.\n")
             if (previous != null) {
@@ -56,6 +56,10 @@ class Ai(private val provider: Provider, private val key: String) {
             }
             if (description.isNotBlank()) append("Lo que la persona dice que comió (confía en esto por sobre la foto si hay conflicto): \"$description\"\n")
             if (cooking != null) append("Método de cocción indicado: $cooking (si es frito, suma el aceite absorbido).\n")
+            if (dish != null) append(
+                "Está servido en: $dish. Es una medida REAL tomada por la persona: úsala como escala para calcular el tamaño " +
+                    "y los gramos de cada alimento (por ejemplo, qué fracción del diámetro ocupa el arroz, o hasta dónde llega el líquido).\n",
+            )
             if (photo == null) append("No hay foto: estima solo con la descripción y porciones típicas de Ecuador.\n")
             append("\n$context")
         }
@@ -118,6 +122,12 @@ class Ai(private val provider: Provider, private val key: String) {
 
     data class Reply(val text: String, val remember: List<String>)
 
+    /** Google explains what went wrong in error.message; show that instead of guessing. */
+    private fun googleMessage(body: String, code: Int): String =
+        (runCatching { JSONObject(body).getJSONObject("error").getString("message") }.getOrNull()?.take(220) ?: "error $code")
+            // Some messages quote the key itself; never show or log it.
+            .replace(Regex("AIza[0-9A-Za-z_-]{10,}|sk-ant-[0-9A-Za-z_-]{10,}"), "[llave]")
+
     private data class Turn(val user: Boolean, val text: String, val photo: Bitmap?)
 
     private fun jpeg(b: Bitmap): String {
@@ -157,10 +167,12 @@ class Ai(private val provider: Provider, private val key: String) {
                 val text = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.readText().orEmpty()
                 when {
                     code == 400 && text.contains("API_KEY_INVALID") -> throw AiException("La llave de Gemini no es válida. Revísala en Perfil.")
-                    code == 401 || code == 403 -> throw AiException("La llave de Gemini fue rechazada. Revísala en Perfil.")
+                    code == 401 -> throw AiException("Google rechazó la llave (" + googleMessage(text, code) + "). Si la cambiaste o la borraste en AI Studio, pega la nueva en Perfil.")
+                    // 403 can be about one model (not enabled for this key or tier), so try the next before giving up.
+                    code == 403 -> { last = AiException("Google no dio acceso: " + googleMessage(text, code)); continue }
                     code == 429 -> { last = AiException("Gemini está saturado o se acabó tu cuota. Intenta en un minuto."); continue }
                     code == 404 || code >= 500 -> { last = AiException("Gemini no respondió ($code)."); continue }
-                    code !in 200..299 -> throw AiException("Gemini: " + (runCatching { JSONObject(text).getJSONObject("error").getString("message") }.getOrNull() ?: "error $code"))
+                    code !in 200..299 -> throw AiException("Gemini: " + googleMessage(text, code))
                 }
                 val parts = JSONObject(text).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
                 val out = parts.objects().joinToString("") { it.optString("text") }
@@ -223,7 +235,7 @@ class Ai(private val provider: Provider, private val key: String) {
 
 Método:
 1. Identifica cada componente del plato por separado (incluye salsas, aceite, bebidas, acompañantes como chifles o arroz).
-2. Estima los gramos de cada uno usando referencias visuales (plato ~26 cm, cubiertos, manos) y porciones típicas.
+2. Estima los gramos de cada uno. Si te dan la medida real del plato, bowl o vaso, úsala como escala principal; si no, usa referencias visuales (plato estándar ~26 cm, cubiertos, manos) y porciones típicas.
 3. Calcula kcal, proteína, carbohidratos, grasa y fibra con valores de tablas de composición (USDA / tabla ecuatoriana). Comprueba que kcal ≈ 4·P + 4·C + 9·G.
 4. Si la descripción contradice la foto, la descripción manda. Si algo no se ve (aceite, azúcar en bebidas), asume lo típico y dilo.
 

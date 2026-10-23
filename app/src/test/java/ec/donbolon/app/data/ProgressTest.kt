@@ -69,6 +69,27 @@ class ProgressTest {
         assertEquals(86.5, AppState.from(JSONObject(s.toJson().toString())).waist[today]!!, 0.001)
     }
 
+    @Test fun dishesSurviveARoundTripAndDescribeTheirScale() {
+        val mine = Dish.defaults + Dish("azul", "Plato azul", Dish.Kind.PLATO, 27.0)
+        val back = AppState.from(JSONObject(AppState(dishes = mine).toJson().toString()))
+        assertEquals(mine, back.dishes)
+        assertEquals("Plato azul, plato de 27 cm de diámetro", mine.last().describe())
+        assertEquals("Bowl, bowl de 500 ml de capacidad", Dish.defaults.first { it.kind == Dish.Kind.BOWL }.describe())
+        // An old diary without dishes gets the starter set, and the last dish is remembered.
+        assertEquals(Dish.defaults, AppState.from(JSONObject()).dishes)
+        assertEquals("azul", Settings.from(Settings(lastDish = "azul").toJson()).lastDish)
+        assertNull(Settings.from(Settings(lastDish = null).toJson()).lastDish)
+    }
+
+    @Test fun everyLibraryLineCitesItsSourceAndNoneOverclaims() {
+        Science.principles.forEach { p ->
+            assertTrue(p.title, p.source.contains(Regex("\\(\\d{4}\\)")))
+            assertTrue(p.title, p.line.length in 60..320)
+        }
+        val tips = Science.tips(AppState(profile = me), Nutrition.targets(me))
+        assertTrue(tips.none { (it.source ?: "").contains("duplican") || it.text.contains("duplican") })
+    }
+
     @Test fun goalDateReadsNaturally() {
         assertEquals("en 6 semanas", Progress.humanWeeks(today, today.plusWeeks(6)))
         assertEquals("en 3 meses", Progress.humanWeeks(today, today.plusWeeks(13)))

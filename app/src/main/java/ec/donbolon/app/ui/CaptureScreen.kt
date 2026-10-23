@@ -151,6 +151,11 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
     var mindful by remember { mutableStateOf(false) }
     var details by remember { mutableStateOf(false) }
     var source by remember { mutableStateOf("foto") }
+    var dishId by rememberSaveable { mutableStateOf(state.settings.lastDish) }
+    fun chooseDish(id: String?) {
+        dishId = id
+        model.store.edit { it.copy(settings = it.settings.copy(lastDish = id)) }
+    }
     val items = remember { mutableStateListOf<FoodItem>() }
     // The grams each item had when it arrived, so the portion slider scales from there.
     val bases = remember { mutableStateListOf<Double>() }
@@ -198,7 +203,8 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         step = Step.THINKING
         scope.launch {
             try {
-                val result = withContext(Dispatchers.IO) { ai.analyze(photo, description, cooking, aiContext(), previous, answer) }
+                val served = state.dishes.firstOrNull { it.id == dishId }?.describe()
+                val result = withContext(Dispatchers.IO) { ai.analyze(photo, description, cooking, aiContext(), previous, answer, served) }
                 analysis = result
                 setItems(result.items)
                 source = if (photo != null) "foto" else "texto"
@@ -294,6 +300,10 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         cookings.forEach { c -> Chip(c, cooking == c) { cooking = if (cooking == c) null else c } }
                     }
+                    Gap(14.dp)
+                    Text("¿En qué lo serviste? Con la medida real calculo mejor las porciones", color = C.muted, fontSize = 13.sp)
+                    Gap(8.dp)
+                    DishChips(state.dishes, dishId) { chooseDish(it) }
 
                     val usuals = remember(state.meals.size) { Memory.usuals(state).take(6) }
                     val recent = remember(state.meals.size) {
@@ -332,6 +342,13 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                 Step.REVIEW -> LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
                     item {
                         Summary(photo, total.kcal, total.protein, total.carbs, total.fat, analysis?.confidence)
+                        if (analysis != null) {
+                            // Changing the dish here re-runs the estimate with the new scale.
+                            Gap(10.dp)
+                            Text("Servido en (toca para cambiar y recalcular):", color = C.faint, fontSize = 12.sp)
+                            Gap(6.dp)
+                            DishChips(state.dishes, dishId) { id -> chooseDish(id); runAnalysis() }
+                        }
                         Gap(14.dp)
                         analysis?.let { a ->
                             val mood = when {
@@ -744,5 +761,14 @@ fun FoodSearch(onPick: (FoodItem) -> Unit, onDismiss: () -> Unit) {
 fun FlowChips(options: List<String>, selected: String?, onClick: (String) -> Unit) {
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEach { o -> Chip(o, o == selected) { onClick(o) } }
+    }
+}
+
+/** The person's own dishes with their real size; "Otro" means no known scale. */
+@Composable
+private fun DishChips(dishes: List<ec.donbolon.app.data.Dish>, selected: String?, onPick: (String?) -> Unit) {
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        dishes.forEach { d -> Chip("${d.name} · ${d.size.toInt()} ${d.kind.unit}", selected == d.id) { onPick(d.id) } }
+        Chip("Otro", selected == null) { onPick(null) }
     }
 }

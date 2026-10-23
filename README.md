@@ -23,13 +23,13 @@ Don Bolón es una app Android para **comer con consciencia todos los días**: re
 Él gruñe contra los hábitos, nunca contra ti. No hay culpa, no hay vergüenza y no hay dietas extremas.
 
 <p align="center">
-  <img src="docs/registrar.png" width="200" alt="Registrar comida con foto, voz o texto" />
+  <img src="docs/registrar.png" width="200" alt="Registrar comida con foto, voz o texto y la medida real de tu plato" />
+  &nbsp;
+  <img src="docs/hoy.png" width="200" alt="Hoy: calorías, ayuno intermitente y constancia" />
+  &nbsp;
+  <img src="docs/progreso.png" width="200" alt="Tu curva: hacia dónde vas, deslizando el dedo" />
   &nbsp;
   <img src="docs/prioridades.png" width="200" alt="Prioridades en un pentágono" />
-  &nbsp;
-  <img src="docs/progreso.png" width="200" alt="Progreso y enfoque de la semana" />
-  &nbsp;
-  <img src="docs/sos.png" width="200" alt="SOS antojo: respiración guiada" />
 </p>
 
 ## Lo que hace
@@ -44,8 +44,10 @@ Don Bolón es una app Android para **comer con consciencia todos los días**: re
 | 🌙 **Ayuno intermitente** | Tu ventana es libre (eliges a qué hora abre y cierra; 12:12 a 18:6 son solo atajos) y la app te **recomienda una con ciencia**: cerrar 3 h antes de dormir (Vujović et al., 2022), 8–10 h de duración y empezando cuando ya sueles comer. Incluye un contador en vivo, ideas de comida solo dentro de la ventana y Don Bolón que no te regaña por no comer cuando estás ayunando. El ayuno funciona igual que cualquier déficit; su ventaja es que a muchos les facilita sostenerlo (Lowe et al., 2020; Liu et al., 2022). |
 | 🔔 **Recordatorios** | Agua cada 2 horas solo si vas atrasado, con un botón "Tomé uno" en la misma notificación, y avisos cuando abre tu ventana y una hora antes de que cierre. |
 | ✅ **Constancia** | Cuatro hábitos diarios (registré, proteína, entrené, agua), racha hacia los 66 días de un hábito y peso suavizado para ver la tendencia real, no el agua del día. |
-| 🧀 **Don Bolón te lo dice** | La ciencia no está pegada en la pantalla: él la trae cuando viene al caso (poca proteína, te pasaste, comiste por estrés, no has entrenado…). Toca su globo para ver el estudio, tócalo a él para hablarle. Si comiste sin hambre, te ofrece un SOS de 3 minutos para surfear el antojo. |
-| 🎨 **Personaje con humor** | Respira, parpadea y se le escurre el queso. Cambia de ánimo según tu día: feliz con ojos sonrientes cuando cumples, tranquilo en el día a día, gruñón solo cuando algo necesita arreglo, y echa vapor si lo tocas. |
+| 🍽️ **Mis platos** | Guardas la medida real de tus platos, bowls y vasos, y al registrar eliges en cuál serviste. La IA la usa como escala para calcular los gramos de cada alimento: las estimaciones solo por foto fallan en promedio entre 17% y 48%. |
+| 📈 **Tu curva** | Tu peso real (sin el ruido del agua), hacia dónde vas si mantienes tus calorías y cuándo llegas a tu meta. La proyección se va aplanando como en la vida real (Hall et al., 2011). Desliza el dedo para ver cada día, cambia a **cintura** o a **grasa estimada** según tu déficit, y mira tu semana y un calendario de 10 semanas por colores. |
+| 🧀 **Don Bolón te lo dice** | Más de 20 hallazgos de estudios revisados uno por uno (sueño, comer tarde, ultraprocesados, sopa antes del almuerzo, proteína, descansos de dieta…), contados con su voz y con la cifra real del paper. No están pegados en la pantalla: él los trae cuando vienen al caso (poca proteína, te pasaste, comiste por estrés, no has entrenado…). Toca su globo para ver el estudio, tócalo a él para hablarle. Si comiste sin hambre, te ofrece un SOS de 3 minutos para surfear el antojo. |
+| 🎨 **Personaje interactivo** | Respira, parpadea y se le escurre el queso. Tócalo y reacciona (gruñe, salta, se ríe o mastica); acarícialo y se sonroja; arrástralo y se aplasta como masa mientras sus ojos siguen tu dedo; mantenlo presionado y te habla. Su ánimo cambia con tu día: feliz cuando cumples, tranquilo en el día a día, gruñón solo cuando algo necesita arreglo. |
 
 ## La ciencia detrás de cada número
 
@@ -62,10 +64,18 @@ Nada es inventado. Don Bolón las cita cuando te da un consejo, y están en **Pe
 | Fuerza y cardio | Cada músculo ≥ 2 veces/semana; 150 min de cardio | Schoenfeld et al. (2016); OMS (2020) |
 | Registrar | La constancia predice el resultado más que la precisión | Burke et al. (2011) |
 | Hábitos | ~66 días para que algo sea automático | Lally et al. (2010) |
-| Planes Si-Entonces | Duplican la probabilidad de cumplir | Gollwitzer & Sheeran (2006) |
+| Planes Si-Entonces | Efecto medio-grande sobre cumplir metas (d≈0,65, 94 estudios) | Gollwitzer & Sheeran (2006) |
 | Restricción flexible | Menos atracones que las reglas de todo-o-nada | Westenhoefer et al. (1999) |
 | Después de un desliz | Autocompasión, sin compensar | Adams & Leary (2007) |
 | Antojos | Surfear la ola en vez de pelearla | Bowen & Marlatt (2009) |
+| Proyección de peso | Se recalcula el gasto cada semana con tu nuevo peso: la curva se aplana | Hall et al. (2011), The Lancet |
+| Dormir poco | ~385 kcal más al día sin gastar más | Al Khatib et al. (2018), Eur J Clin Nutr |
+| Comer tarde | Más hambre y menos gasto con las mismas calorías | Vujović et al. (2022), Cell Metabolism |
+| Ultraprocesados | 508 kcal más al día, a libre elección | Hall et al. (2019), Cell Metabolism |
+| Sopa antes | 20% menos energía en el almuerzo | Flood & Rolls (2007), Appetite |
+| Bajar lento | 0,7% del peso por semana conservó y ganó músculo en atletas | Garthe et al. (2011), IJSNEM |
+| Descansos de dieta | Más grasa perdida alternando 2 semanas de dieta y 2 de mantenimiento | Byrne et al. (2018), Int J Obesity |
+| Músculo en déficit | Con 2,4 g/kg de proteína y pesas se ganó músculo perdiendo grasa | Longland et al. (2016), Am J Clin Nutr |
 
 ## Privacidad y seguridad
 

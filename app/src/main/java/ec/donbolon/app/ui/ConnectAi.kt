@@ -112,8 +112,13 @@ fun ConnectAi(model: AppModel, onConnected: () -> Unit) {
     }
 }
 
-/** Pulls the actual key out of whatever was pasted (Gemini keys start with AIza, Anthropic's with sk-ant-). */
+/**
+ * Pulls the actual key out of whatever was pasted. Gemini keys come in two formats (the classic
+ * "AIza…" and the newer "AQ.…"), Anthropic's start with "sk-ant-". Clipboards sometimes add
+ * spaces, line breaks or quotes, so those go first.
+ */
 fun cleanKey(provider: Provider, pasted: String): String {
-    val pattern = if (provider == Provider.GEMINI) Regex("AIza[0-9A-Za-z_\\-]{30,}") else Regex("sk-ant-[0-9A-Za-z_\\-]{20,}")
-    return pattern.find(pasted)?.value ?: pasted.trim().trim('"', '\'', ' ')
+    val compact = pasted.replace(Regex("\\s+"), "").trim('"', '\'')
+    val pattern = if (provider == Provider.GEMINI) Regex("AIza[0-9A-Za-z_-]{30,}|AQ\\.[0-9A-Za-z_.-]{20,}") else Regex("sk-ant-[0-9A-Za-z_-]{20,}")
+    return pattern.find(compact)?.value ?: compact
 }

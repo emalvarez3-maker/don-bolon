@@ -226,14 +226,22 @@ data class ChatMessage(val fromUser: Boolean, val text: String, val time: Long =
 
 enum class Provider(val label: String) { GEMINI("Google Gemini"), CLAUDE("Anthropic Claude"), NINGUNO("Sin IA (solo libreta)") }
 
-data class Settings(val provider: Provider = Provider.GEMINI, val lock: Boolean = false, val waterReminders: Boolean = true, val fastReminders: Boolean = true) {
+data class Settings(
+    val provider: Provider = Provider.GEMINI,
+    val lock: Boolean = false,
+    val waterReminders: Boolean = true,
+    val fastReminders: Boolean = true,
+    /** The dish used last time, preselected so a photo can be analyzed right away. */
+    val lastDish: String? = "plato-llano",
+) {
     fun toJson(): JSONObject = JSONObject().put("provider", provider.name).put("lock", lock)
-        .put("waterReminders", waterReminders).put("fastReminders", fastReminders)
+        .put("waterReminders", waterReminders).put("fastReminders", fastReminders).put("lastDish", lastDish ?: JSONObject.NULL)
 
     companion object {
         fun from(o: JSONObject) = Settings(
             enumOr(o.optString("provider"), Provider.GEMINI), o.optBoolean("lock"),
             o.optBoolean("waterReminders", true), o.optBoolean("fastReminders", true),
+            if (o.has("lastDish") && o.isNull("lastDish")) null else o.optString("lastDish", "plato-llano"),
         )
     }
 }
@@ -245,6 +253,8 @@ data class AppState(
     val water: Map<LocalDate, Int> = emptyMap(),
     /** Waist in cm by day: the better signal for recomposition, where weight can stay flat. */
     val waist: Map<LocalDate, Double> = emptyMap(),
+    /** The person's own dishware with real sizes, so the AI has a true scale in the photo. */
+    val dishes: List<Dish> = Dish.defaults,
     val plans: List<IfThenPlan> = emptyList(),
     val chat: List<ChatMessage> = emptyList(),
     val settings: Settings = Settings(),
@@ -266,6 +276,7 @@ data class AppState(
         .put("weights", JSONArray(weights.map { it.toJson() }))
         .put("water", JSONObject(water.mapKeys { it.key.toString() }))
         .put("waist", JSONObject(waist.mapKeys { it.key.toString() }))
+        .put("dishes", JSONArray(dishes.map { it.toJson() }))
         .put("plans", JSONArray(plans.map { it.toJson() }))
         .put("chat", JSONArray(chat.takeLast(80).map { it.toJson() }))
         .put("settings", settings.toJson())
@@ -285,6 +296,7 @@ data class AppState(
                 weights = o.optJSONArray("weights").objects().map(WeightEntry::from).sortedBy { it.date },
                 water = water?.keys()?.asSequence()?.associate { LocalDate.parse(it) to water.optInt(it) } ?: emptyMap(),
                 waist = o.optJSONObject("waist")?.let { w -> w.keys().asSequence().associate { LocalDate.parse(it) to w.optDouble(it) } } ?: emptyMap(),
+                dishes = o.optJSONArray("dishes")?.objects()?.map(Dish::from)?.takeIf { it.isNotEmpty() } ?: Dish.defaults,
                 plans = o.optJSONArray("plans").objects().map(IfThenPlan::from),
                 chat = o.optJSONArray("chat").objects().map(ChatMessage::from),
                 settings = o.optJSONObject("settings")?.let(Settings::from) ?: Settings(),
@@ -318,6 +330,37 @@ data class PlannedMeal(val slot: Slot, val title: String, val items: List<FoodIt
         fun from(o: JSONObject) = PlannedMeal(
             enumOr(o.optString("slot"), Slot.SNACK), o.optString("title"),
             o.optJSONArray("items").objects().map(FoodItem::from), o.optBoolean("eaten"),
+        )
+    }
+}
+
+/**
+ * A plate, bowl or glass the person actually uses. Portion estimates from photos miss by 17–48%
+ * on average; a known plate diameter or bowl volume gives the AI a real scale to measure against.
+ */
+data class Dish(val id: String, val name: String, val kind: Kind, val size: Double) {
+    enum class Kind(val label: String, val unit: String) { PLATO("Plato", "cm"), BOWL("Bowl", "ml"), VASO("Vaso", "ml"), TAZA("Taza", "ml") }
+
+    /** How the AI should read it: diameter for plates, volume for the rest. */
+    fun describe() = when (kind) {
+        Kind.PLATO -> "$name, plato de ${size.toInt()} cm de diámetro"
+        else -> "$name, ${kind.label.lowercase()} de ${size.toInt()} ml de capacidad"
+    }
+
+    fun toJson(): JSONObject = JSONObject().put("id", id).put("name", name).put("kind", kind.name).put("size", size)
+
+    companion object {
+        val defaults = listOf(
+            Dish("plato-llano", "Plato llano", Kind.PLATO, 26.0),
+            Dish("plato-hondo", "Plato hondo", Kind.PLATO, 22.0),
+            Dish("bowl", "Bowl", Kind.BOWL, 500.0),
+            Dish("vaso", "Vaso", Kind.VASO, 300.0),
+            Dish("taza", "Taza", Kind.TAZA, 250.0),
+        )
+
+        fun from(o: JSONObject) = Dish(
+            o.optString("id", java.util.UUID.randomUUID().toString()), o.optString("name", "Plato"),
+            enumOr(o.optString("kind"), Kind.PLATO), o.optDouble("size", 26.0).coerceIn(1.0, 5000.0),
         )
     }
 }
