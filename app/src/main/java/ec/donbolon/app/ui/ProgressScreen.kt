@@ -52,6 +52,7 @@ import ec.donbolon.app.data.DayMark
 import ec.donbolon.app.data.Nutrition
 import ec.donbolon.app.data.Point
 import ec.donbolon.app.data.Progress
+import ec.donbolon.app.data.journeyFor
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -85,11 +86,41 @@ fun ProgressScreen(model: AppModel) {
     val projection = remember(state.weights, state.profile) { Progress.projection(state) }
     val fat = remember(state.meals.size, state.weights) { Progress.fatCurve(state, 120) }
     val week = Progress.weekStats(state)
+    // Remembered so Don Bolón's walk only replays when the weights or the goal change.
+    val journey = remember(state.weights, state.profile) { journeyFor(state) }
+    val composition = remember(state.waist, state.weights, state.profile) { Progress.composition(state) }
 
     LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp)) {
         item {
             Text("Progreso", style = MaterialTheme.typography.headlineMedium)
             Gap(16.dp)
+
+            // --- The road to the goal ----------------------------------------------------------
+            if (journey != null) {
+                Panel(padding = 16.dp) {
+                    Label("Tu camino")
+                    Gap(8.dp)
+                    JourneyPath(journey, projection.reachesGoal)
+                }
+                Gap(12.dp)
+            } else if (state.profile.goalWeightKg == null) {
+                Panel(padding = 16.dp) {
+                    Label("Tu camino")
+                    Gap(6.dp)
+                    Text("Ponte un peso meta y te digo cuándo llegas a este ritmo.", fontSize = 14.sp)
+                    Gap(8.dp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Field(goalText, { goalText = it }, "Peso meta (kg)", Modifier.weight(1f), number = true)
+                        HGap(8.dp)
+                        QuietButton("Guardar") {
+                            goalText.replace(',', '.').toDoubleOrNull()?.takeIf { it in 35.0..250.0 }?.let { g ->
+                                model.store.edit { it.copy(profile = it.profile.copy(goalWeightKg = g)) }; goalText = ""
+                            }
+                        }
+                    }
+                }
+                Gap(12.dp)
+            }
 
             state.focus?.let { f ->
                 Panel(padding = 16.dp) {
@@ -146,18 +177,6 @@ fun ProgressScreen(model: AppModel) {
                             fontSize = 14.sp,
                         )
                         Text("La línea punteada se va aplanando: al pesar menos gastas menos, así que la misma dieta baja más lento. Es normal.", color = C.faint, fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp))
-                        if (goal == null) {
-                            Gap(8.dp)
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Field(goalText, { goalText = it }, "Peso meta (kg)", Modifier.weight(1f), number = true)
-                                HGap(8.dp)
-                                QuietButton("Guardar") {
-                                    goalText.replace(',', '.').toDoubleOrNull()?.takeIf { it in 35.0..250.0 }?.let { g ->
-                                        model.store.edit { it.copy(profile = it.profile.copy(goalWeightKg = g)) }; goalText = ""
-                                    }
-                                }
-                            }
-                        }
                     }
                     Metric.CINTURA -> {
                         val pts = cut(state.waist.entries.sortedBy { it.key }.map { Point(it.key, it.value) })
@@ -202,6 +221,14 @@ fun ProgressScreen(model: AppModel) {
                         if (cm != null) waistText = ""
                     }
                 }
+            }
+            Gap(12.dp)
+
+            // --- Fat vs. lean mass, from the waist ---------------------------------------------
+            Panel(padding = 16.dp) {
+                Label("Grasa vs. músculo")
+                Gap(10.dp)
+                CompositionChart(composition)
             }
             Gap(12.dp)
 

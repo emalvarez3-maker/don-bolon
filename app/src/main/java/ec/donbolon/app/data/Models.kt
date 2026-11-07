@@ -98,6 +98,8 @@ data class Profile(
     val sleepHour: Int = 23,
     val priorities: Priorities = goal.priorities,
     val onboarded: Boolean = false,
+    /** The person's hand measured on the screen ruler; null until calibrated. */
+    val hand: Hand? = null,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("name", name).put("sex", sex.name).put("age", age).put("heightCm", heightCm)
@@ -105,6 +107,7 @@ data class Profile(
         .put("rateKgWeek", rateKgWeek).put("goalWeightKg", goalWeightKg ?: JSONObject.NULL)
         .put("trainDays", trainDays).put("windowHours", windowHours).put("windowStart", windowStart).put("sleepHour", sleepHour)
         .put("priorities", priorities.toJson()).put("onboarded", onboarded)
+        .put("hand", hand?.toJson() ?: JSONObject.NULL)
 
     companion object {
         fun from(o: JSONObject) = Profile(
@@ -125,6 +128,7 @@ data class Profile(
             windowStart = o.optInt("windowStart", 12).coerceIn(0, 23),
             priorities = o.optJSONObject("priorities")?.let(Priorities::from) ?: enumOr(o.optString("goal"), Goal.BAJAR).priorities,
             onboarded = o.optBoolean("onboarded"),
+            hand = o.optJSONObject("hand")?.let(Hand::from),
         )
     }
 }

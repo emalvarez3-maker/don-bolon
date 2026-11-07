@@ -11,3 +11,6 @@ secrets.properties
 
 # Runs of the graph workflow (graph.md, checks.md, progress.md) can hold personal data
 .claude/
+
+# Nutrition5k bench dishes (CC BY 4.0, Google Research): third-party data, kept out of the repo
+app/src/androidTest/assets/

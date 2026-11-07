@@ -17,7 +17,10 @@ import com.anthropic.models.beta.messages.BetaTextBlockParam
 import com.anthropic.models.beta.messages.MessageCreateParams
 import ec.donbolon.app.data.ChatMessage
 import ec.donbolon.app.data.FoodItem
+import ec.donbolon.app.data.Measured
+import ec.donbolon.app.data.Per100
 import ec.donbolon.app.data.PlannedMeal
+import ec.donbolon.app.data.Shape
 import ec.donbolon.app.data.Provider
 import ec.donbolon.app.data.Slot
 import ec.donbolon.app.data.objects
@@ -33,6 +36,16 @@ class AiException(message: String, val badKey: Boolean = false) : Exception(mess
 
 data class Analysis(
     val items: List<FoodItem>,
+    val confidence: String,
+    val verdict: String,
+    val better: String,
+    val question: String,
+)
+
+/** What [Ai.measure] saw: each food in centimeters, and what it used as a ruler. */
+data class Measurement(
+    val items: List<Measured>,
+    val reference: String,
     val confidence: String,
     val verdict: String,
     val better: String,
@@ -70,6 +83,33 @@ class Ai(private val provider: Provider, private val key: String) {
             Provider.NINGUNO -> throw AiException("Sin IA configurada")
         }
         return parseAnalysis(raw)
+    }
+
+    /**
+     * Measures each food in centimeters instead of guessing grams: [scale] says what the ruler in the
+     * photo is (the person's hand, the dish, or a known camera distance), [side] adds the height the top
+     * view can't show, and [densityKeys] lists the density table the grams will come from. The grams
+     * themselves are computed by [ec.donbolon.app.data.Portion], not by the model.
+     */
+    fun measure(top: Bitmap?, side: Bitmap?, description: String, cooking: String?, context: String, scale: String, densityKeys: Collection<String>): Measurement {
+        val ask = buildString {
+            append("Mide cada alimento de esta comida.\n")
+            append("REGLA DE ESCALA: $scale\n")
+            if (top != null) append("La primera foto es DE ARRIBA: úsala para el largo y el ancho de cada alimento.\n")
+            if (side != null) append("La ${if (top != null) "segunda" else "única"} foto es DE LADO: úsala para el alto de cada alimento.\n")
+            if (side == null) append("No hay foto de lado: estima el alto con la sombra, el borde del plato y lo típico de ese alimento.\n")
+            if (description.isNotBlank()) append("Lo que la persona dice que comió (manda sobre la foto si hay conflicto): \"$description\"\n")
+            if (cooking != null) append("Método de cocción indicado: $cooking (si es frito, cuenta el aceite en los valores por 100 g).\n")
+            append("Claves de densidad disponibles: ${densityKeys.joinToString()}\n")
+            append("\n$context")
+        }
+        val photos = listOfNotNull(top, side)
+        val raw = when (provider) {
+            Provider.GEMINI -> gemini(MEASURE_SYSTEM, listOf(Turn(true, ask, photos)), json = true)
+            Provider.CLAUDE -> claude(MEASURE_SYSTEM, listOf(Turn(true, ask, photos)), effort = BetaOutputConfig.Effort.HIGH)
+            Provider.NINGUNO -> throw AiException("Sin IA configurada")
+        }
+        return parseMeasurement(raw)
     }
 
     /** A menu for the given slots, each sized to its calorie budget. [avoid] lists titles to not repeat. */
@@ -138,7 +178,10 @@ class Ai(private val provider: Provider, private val key: String) {
             // Some messages quote the key itself; never show or log it.
             .replace(Regex("AIza[0-9A-Za-z_-]{10,}|AQ\\.[0-9A-Za-z_.-]{10,}|sk-ant-[0-9A-Za-z_-]{10,}"), "[llave]")
 
-    private data class Turn(val user: Boolean, val text: String, val photo: Bitmap?)
+    /** One message; a meal can carry two photos (from above and from the side). */
+    private data class Turn(val user: Boolean, val text: String, val photos: List<Bitmap> = emptyList()) {
+        constructor(user: Boolean, text: String, photo: Bitmap?) : this(user, text, listOfNotNull(photo))
+    }
 
     private fun jpeg(b: Bitmap): String {
         val out = ByteArrayOutputStream()
@@ -149,7 +192,7 @@ class Ai(private val provider: Provider, private val key: String) {
     private fun gemini(system: String, turns: List<Turn>, json: Boolean, readTimeout: Int = 90_000): String {
         val contents = JSONArray(turns.map { t ->
             val parts = JSONArray()
-            t.photo?.let { parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", jpeg(it)))) }
+            t.photos.forEach { parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", jpeg(it)))) }
             parts.put(JSONObject().put("text", t.text))
             JSONObject().put("role", if (t.user) "user" else "model").put("parts", parts)
         })
@@ -204,7 +247,7 @@ class Ai(private val provider: Provider, private val key: String) {
         val client = AnthropicOkHttpClient.builder().apiKey(key).build()
         val messages = turns.map { t ->
             val blocks = buildList {
-                t.photo?.let {
+                t.photos.forEach {
                     add(BetaContentBlockParam.ofImage(
                         BetaImageBlockParam.builder().source(
                             BetaBase64ImageSource.builder().data(jpeg(it)).mediaType(BetaBase64ImageSource.MediaType.IMAGE_JPEG).build()
@@ -285,6 +328,63 @@ Reglas:
 
 Responde SOLO con JSON válido, sin markdown:
 {"meals":[{"slot":"DESAYUNO|ALMUERZO|CENA|SNACK","title":"nombre corto del plato","items":[{"name":"","grams":0,"kcal":0,"protein":0,"carbs":0,"fat":0,"fiber":0}]}]}"""
+
+        private const val MEASURE_SYSTEM = """Eres un experto en medir porciones de comida en fotos, con dominio de la comida ecuatoriana (arroz, menestra, verde, maduro, bolón, patacón, seco, encebollado, ceviche, locro, mote, yuca, tigrillo). NO estimas gramos: mides centímetros. Los gramos los calcula después un programa con la geometría y una tabla de densidades, así que tu trabajo es medir bien.
+
+Método:
+1. Lee la REGLA DE ESCALA. Si es la mano de la persona, localízala en la foto y usa sus medidas reales (ancho de palma, largo del dedo medio, ancho del pulgar) como regla. Si es el plato, usa su diámetro real. Si es la distancia de la cámara, usa el ancho real que cubre la imagen.
+2. Separa cada componente del plato (incluye salsas, aceite visible, curtido, bebidas, acompañantes).
+3. Para cada uno elige la forma:
+   - MOUND: montón (arroz, menestra, puré, majado). length y width = la huella sobre el plato; height = lo más alto del montón.
+   - FLAT: capa plana (carne, filete, huevo frito, tortilla, patacón). height = grosor.
+   - CYLINDER: pieza redonda de pie (vaso, taza, bolón visto de lado).
+   - PIECE: pieza sólida (presa de pollo, papa, maduro, yuca, choclo): length, width y height de la pieza; si hay varias iguales, una entrada por pieza o describe una y repítela.
+   - LIQUID: sopa o bebida en un recipiente: length/width/height del recipiente por dentro y fill = fracción llena (0 a 1).
+4. Mide length, width y height en centímetros con la regla, no con porciones típicas. Si una medida no se ve, estímala con lo que sí se ve y baja la confianza.
+5. Elige densityKey de la lista de claves disponibles (la más parecida al alimento); si ninguna encaja, null.
+6. Da los valores por 100 g del alimento TAL COMO ESTÁ servido (cocido, frito, con su aceite), de tablas de composición (tabla ecuatoriana o USDA). Comprueba kcal ≈ 4·P + 4·C + 9·G.
+7. Si la descripción contradice la foto, la descripción manda.
+
+Responde SOLO con JSON válido, sin texto extra ni markdown, con esta forma exacta:
+{"items":[{"name":"nombre corto en español","shape":"MOUND|FLAT|CYLINDER|PIECE|LIQUID","length":0,"width":0,"height":0,"fill":null,"densityKey":"clave o null","per100":{"kcal":0,"protein":0,"carbs":0,"fat":0,"fiber":0}}],
+ "reference":"qué usaste como regla y cuánto mide en la foto, en una frase",
+ "confidence":"alta|media|baja",
+ "question":"UNA pregunta corta solo si algo que la foto no puede mostrar cambia las calorías en más de ~15% (¿frito o a la plancha?, ¿la bebida tiene azúcar?); si la foto basta, vacío",
+ "verdict":"1-2 frases de Don Bolón, un bolón de queso gruñón pero cariñoso, sobre el plato en relación con lo que le queda del día. Sin culpa ni vergüenza.",
+ "better":"una mejora concreta y realista para la próxima vez, o vacío"}
+Si la imagen no contiene comida, devuelve items vacío y explícalo en verdict."""
+
+        /** Reads [measure]'s JSON; items with no size or an unknown shape are dropped instead of guessed. */
+        fun parseMeasurement(raw: String): Measurement {
+            val start = raw.indexOf('{')
+            val end = raw.lastIndexOf('}')
+            if (start < 0 || end <= start) throw AiException("No entendí la respuesta de la IA. Intenta otra vez.")
+            val o = try { JSONObject(raw.substring(start, end + 1)) } catch (e: Exception) { throw AiException("La IA respondió algo raro. Intenta otra vez.") }
+            val items = o.optJSONArray("items").objects().mapNotNull { j ->
+                val shape = runCatching { Shape.valueOf(j.optString("shape").uppercase()) }.getOrNull() ?: return@mapNotNull null
+                val p = j.optJSONObject("per100") ?: return@mapNotNull null
+                val m = Measured(
+                    name = j.optString("name").ifBlank { return@mapNotNull null },
+                    shape = shape,
+                    lengthCm = j.optDouble("length", 0.0),
+                    widthCm = j.optDouble("width", 0.0),
+                    heightCm = j.optDouble("height", 0.0),
+                    per100 = Per100(p.optDouble("kcal", 0.0), p.optDouble("protein", 0.0), p.optDouble("carbs", 0.0), p.optDouble("fat", 0.0), p.optDouble("fiber", 0.0)),
+                    densityKey = j.optString("densityKey").takeIf { it.isNotBlank() && it != "null" },
+                    fill = if (j.isNull("fill")) null else j.optDouble("fill").takeIf { !it.isNaN() },
+                )
+                // NaN fails every comparison, so a missing size drops the item too.
+                m.takeIf { it.lengthCm > 0 && it.widthCm > 0 && it.heightCm > 0 }
+            }
+            return Measurement(
+                items = items,
+                reference = o.optString("reference"),
+                confidence = o.optString("confidence", "media"),
+                verdict = o.optString("verdict"),
+                better = o.optString("better"),
+                question = o.optString("question"),
+            )
+        }
 
         fun parseAnalysis(raw: String): Analysis {
             val start = raw.indexOf('{')

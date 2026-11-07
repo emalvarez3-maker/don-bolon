@@ -97,6 +97,65 @@ object Progress {
     /** "en 9 semanas" / "en 3 meses", for the goal date. */
     fun humanWeeks(from: LocalDate, to: LocalDate): String {
         val w = ((to.toEpochDay() - from.toEpochDay()) / 7.0).roundToInt()
-        return if (w < 9) "en $w semanas" else "en ${(w / 4.345).roundToInt()} meses"
+        return when {
+            w <= 1 -> "en 1 semana"
+            w < 9 -> "en $w semanas"
+            else -> "en ${(w / 4.345).roundToInt()} meses"
+        }
+    }
+
+    /** Lowest and highest body fat % [rfm] returns; see its KDoc for why. */
+    const val RFM_MIN_PCT = 4.0
+    const val RFM_MAX_PCT = 60.0
+
+    /**
+     * Relative Fat Mass, an estimate of whole-body fat % from height and waist alone:
+     * men 64 − 20 × (height / waist), women 76 − 20 × (height / waist), both in the same unit.
+     *
+     * Source: Woolcott OO, Bergman RN (2018). Relative fat mass (RFM) as a new estimator of
+     * whole-body fat percentage — a cross-sectional study in American adult individuals.
+     * Scientific Reports 8:10980, doi:10.1038/s41598-018-29362-1. Developed against DXA in
+     * NHANES 1999–2004 (n = 12,581) and validated in NHANES 2005–2006 (n = 3,456). In validation
+     * RFM explained R² = 0.75 (men) and 0.69 (women) of DXA fat %, with bias of +0.5 and +0.9
+     * points; 88.9 % (men) and 91.5 % (women) of estimates fell within 20 % of DXA. It misclassified
+     * DXA obesity in 9.4 % of men and 12.7 % of women (AUC 0.94 and 0.93). An estimate, not a scan:
+     * a single value can be several points off, so trends matter more than one reading.
+     *
+     * Returns null for non-finite or implausible inputs (height outside 100–250 cm, waist outside
+     * 40–200 cm). The result is clamped to [RFM_MIN_PCT, RFM_MAX_PCT]: 4 % is about the essential
+     * fat of a lean man (below it the linear formula just extrapolates past physiology), and DXA fat
+     * % in the NHANES samples the formula was fit on rarely exceeds 60 %.
+     */
+    fun rfm(sex: Sex, heightCm: Double, waistCm: Double): Double? {
+        if (!heightCm.isFinite() || !waistCm.isFinite()) return null
+        if (heightCm !in 100.0..250.0 || waistCm !in 40.0..200.0) return null
+        val base = if (sex == Sex.MUJER) 76.0 else 64.0
+        return (base - 20.0 * heightCm / waistCm).coerceIn(RFM_MIN_PCT, RFM_MAX_PCT)
+    }
+
+    /**
+     * Fat and lean mass over the last [months] months: one point per waist measurement (waist is
+     * measured rarely, so each reading is a real data point; bucketing by month would either drop
+     * readings or repeat one). Each waist is paired with the smoothed weight ([Nutrition.trend])
+     * whose date is closest to it, earlier winning ties; before any weigh-in the profile weight is
+     * used, as in [currentWeight]. No waist data gives an empty list: a waist is never invented.
+     */
+    fun composition(s: AppState, months: Int = 6, today: LocalDate = LocalDate.now()): List<Composition> {
+        val from = today.minusMonths(months.toLong())
+        val trend = Nutrition.trend(s.weights)
+        return s.waist.entries
+            .filter { !it.key.isAfter(today) && it.key.isAfter(from) }
+            .sortedBy { it.key }
+            .mapNotNull { (date, waistCm) ->
+                val pct = rfm(s.profile.sex, s.profile.heightCm, waistCm) ?: return@mapNotNull null
+                val weight = trend.minWithOrNull(
+                    compareBy<Pair<LocalDate, Double>> { abs(it.first.toEpochDay() - date.toEpochDay()) }.thenBy { it.first },
+                )?.second ?: s.profile.weightKg
+                val fatKg = weight * pct / 100.0
+                Composition(date, weight, pct, fatKg, weight - fatKg)
+            }
     }
 }
+
+/** Body composition on one day: fat % from [Progress.rfm] and the weight split into fat and lean kg. */
+data class Composition(val date: LocalDate, val weightKg: Double, val fatPct: Double, val fatKg: Double, val leanKg: Double)

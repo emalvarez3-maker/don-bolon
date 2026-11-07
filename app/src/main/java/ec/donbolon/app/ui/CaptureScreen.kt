@@ -65,6 +65,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -91,6 +92,8 @@ import ec.donbolon.app.ai.Ai
 import ec.donbolon.app.ai.AiException
 import ec.donbolon.app.ai.Analysis
 import ec.donbolon.app.data.Fast
+import ec.donbolon.app.data.Measured
+import ec.donbolon.app.data.Portion
 import ec.donbolon.app.data.FoodDb
 import ec.donbolon.app.data.FoodItem
 import ec.donbolon.app.data.Meal
@@ -135,6 +138,12 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
 
     var step by remember { mutableStateOf(Step.COMPOSE) }
     var photo by remember { mutableStateOf<Bitmap?>(null) }
+    // The view from the side gives the height the top view can't, so volumes stop being guesses.
+    var side by remember { mutableStateOf<Bitmap?>(null) }
+    var sideAsked by remember { mutableStateOf(false) }
+    var handSetup by remember { mutableStateOf(false) }
+    // What the AI measured for each food (by name), shown in the review as "9 × 7 × 3 cm".
+    val measured = remember { mutableStateMapOf<String, Measured>() }
     var description by rememberSaveable { mutableStateOf("") }
     var cooking by rememberSaveable { mutableStateOf<String?>(null) }
     var slot by rememberSaveable { mutableStateOf(Slot.forHour(LocalTime.now().hour)) }
@@ -175,6 +184,17 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         }
     }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> accept(if (ok) camUri else null) }
+    val sideFile = remember { File(context.cacheDir, "camera").apply { mkdirs() }.resolve("plato-lado.jpg") }
+    val sideUri = remember { FileProvider.getUriForFile(context, "${context.packageName}.files", sideFile) }
+    var sideShots by remember { mutableIntStateOf(0) }
+    val sideCamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        External.back()
+        scope.launch {
+            if (ok) side = withContext(Dispatchers.IO) { Images.load(context, sideUri) }
+            // Taken or skipped, the side view's turn is over: the analysis can start.
+            sideShots++
+        }
+    }
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { accept(it) }
     val voice = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
         External.back()
@@ -182,6 +202,7 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         if (r.resultCode == Activity.RESULT_OK && !said.isNullOrBlank()) description = listOf(description, said).filter { it.isNotBlank() }.joinToString(", ")
     }
     fun shoot() = runCatching { External.open = true; camera.launch(camUri) }.onFailure { External.open = false; error = "No encontré una app de cámara." }
+    fun shootSide() = runCatching { External.open = true; sideCamera.launch(sideUri) }.onFailure { External.open = false; sideShots++ }
     fun pick() = runCatching { External.open = true; gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
         .onFailure { External.open = false; error = "No pude abrir la galería." }
     fun listen() = runCatching {
@@ -204,8 +225,25 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         step = Step.THINKING
         scope.launch {
             try {
-                val served = state.dishes.firstOrNull { it.id == dishId }?.describe()
-                val result = withContext(Dispatchers.IO) { ai.analyze(photo, description, cooking, aiContext(), previous, answer, served) }
+                val dish = state.dishes.firstOrNull { it.id == dishId }
+                val top = photo
+                // With a photo the AI measures in centimeters and geometry gives the grams; words alone
+                // have nothing to measure, so they keep the estimate in grams.
+                val measuredResult = if (top == null && side == null) null else withContext(Dispatchers.IO) {
+                    val said = listOf(description, answer.takeIf { previous != null }.orEmpty()).filter { it.isNotBlank() }.joinToString(". ")
+                    ai.measure(top, side, said, cooking, aiContext(), Portion.scale(state.profile.hand, dish), Portion.densities.keys)
+                }.takeIf { it.items.isNotEmpty() }
+                val result = if (measuredResult != null) {
+                    measured.clear()
+                    measuredResult.items.forEach { measured[it.name] = it }
+                    Analysis(
+                        measuredResult.items.map { Portion.item(it, Portion.capacityMl(dish)) },
+                        measuredResult.confidence, measuredResult.verdict, measuredResult.better, measuredResult.question,
+                    )
+                } else {
+                    measured.clear()
+                    withContext(Dispatchers.IO) { ai.analyze(photo, description, cooking, aiContext(), previous, answer, dish?.describe()) }
+                }
                 analysis = result
                 setItems(result.items)
                 source = if (photo != null) "foto" else "texto"
@@ -219,8 +257,13 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         }
     }
 
-    // Photo first: as soon as a picture arrives, the analysis starts.
-    LaunchedEffect(shots) { if (shots > 0 && ai.available && step == Step.COMPOSE) runAnalysis() }
+    // Photo first: when the top view arrives the side camera opens once (skipping it is fine), and
+    // when that turn ends the analysis starts.
+    LaunchedEffect(shots) {
+        if (shots == 0 || !ai.available || step != Step.COMPOSE) return@LaunchedEffect
+        if (!sideAsked && side == null) { sideAsked = true; shootSide() } else runAnalysis()
+    }
+    LaunchedEffect(sideShots) { if (sideShots > 0 && ai.available && step == Step.COMPOSE && photo != null) runAnalysis() }
 
     fun quick(list: List<FoodItem>, from: String) {
         analysis = null
@@ -263,6 +306,17 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
     val total = items.totals()
     val leftAfter = targets.kcal - state.totalsOn(LocalDate.now()).kcal - total.kcal
 
+    if (handSetup) {
+        Box(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding()) {
+            HandSetup(
+                state.profile.hand,
+                onSave = { h -> model.store.edit { it.copy(profile = it.profile.copy(hand = h)) }; handSetup = false },
+                onCancel = { handSetup = false },
+            )
+        }
+        return
+    }
+
     Column(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 20.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onDone) { Icon(Icons.Filled.Close, "Cerrar", tint = C.muted) }
@@ -283,7 +337,13 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                         ConnectAi(model) { ai = model.ai(); error = null; if (description.isNotBlank() || photo != null) runAnalysis() }
                         Gap(16.dp)
                     }
-                    Viewfinder(photo, onCamera = { shoot() }, onGallery = { pick() })
+                    TwoViewCapture(
+                        top = photo, side = side, handReady = state.profile.hand != null,
+                        onShootTop = { shoot() }, onShootSide = { shootSide() }, onPickTop = { pick() }, onClearSide = { side = null },
+                    )
+                    if (state.profile.hand == null) {
+                        QuietButton("✋ Medir mi mano ahora", color = C.gold) { handSetup = true }
+                    }
                     Gap(18.dp)
 
                     Label("O cuéntamelo")
@@ -388,7 +448,8 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                     }
                     items(items.size, key = { "$it-${items.getOrNull(it)?.name}" }) { i ->
                         items.getOrNull(i)?.let { f ->
-                            ItemCard(f, bases.getOrElse(i) { f.grams }, onChange = { items[i] = it }, onRemove = { removeAt(i) })
+                            val size = measured[f.name]?.let { m -> "medido con ${if (state.profile.hand != null) "tu mano" else "tu plato"}: ${cm(m.lengthCm)} × ${cm(m.widthCm)} × ${cm(m.heightCm)} cm" }
+                            ItemCard(f, bases.getOrElse(i) { f.grams }, size, onChange = { items[i] = it }, onRemove = { removeAt(i) })
                         }
                         Gap(8.dp)
                     }
@@ -662,7 +723,7 @@ private fun ProgressLine(frac: Float, color: Color, height: Dp = 8.dp) {
 
 /** One food: tap the name to fix it, slide to change the portion (¼× to 2½× of the estimate). */
 @Composable
-private fun ItemCard(f: FoodItem, base: Double, onChange: (FoodItem) -> Unit, onRemove: () -> Unit) {
+private fun ItemCard(f: FoodItem, base: Double, size: String?, onChange: (FoodItem) -> Unit, onRemove: () -> Unit) {
     var editing by remember { mutableStateOf(false) }
     val k = if (base > 0) (f.grams / base).toFloat() else 1f
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.card).padding(horizontal = 14.dp, vertical = 12.dp)) {
@@ -670,6 +731,7 @@ private fun ItemCard(f: FoodItem, base: Double, onChange: (FoodItem) -> Unit, on
             Column(Modifier.weight(1f).clickable { editing = true }) {
                 Text(f.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                 Text("P ${f.protein.fmt()} · C ${f.carbs.fmt()} · G ${f.fat.fmt()}  ·  editar", color = C.muted, fontSize = 12.sp)
+                size?.let { Text("📐 $it", color = C.faint, fontSize = 11.sp) }
             }
             Text("${f.kcal.fmt()} kcal", fontWeight = FontWeight.SemiBold)
             IconButton(onRemove, Modifier.size(32.dp)) { Icon(Icons.Filled.Close, "Quitar", tint = C.faint, modifier = Modifier.size(16.dp)) }
@@ -773,4 +835,10 @@ private fun DishChips(dishes: List<ec.donbolon.app.data.Dish>, selected: String?
         dishes.forEach { d -> Chip("${d.name} · ${d.size.toInt()} ${d.kind.unit}", selected == d.id) { onPick(d.id) } }
         Chip("Otro", selected == null) { onPick(null) }
     }
+}
+
+/** "9", "3.5": half-centimeter precision, which is all a photo can honestly give. */
+private fun cm(x: Double): String {
+    val half = (x * 2).roundToInt() / 2.0
+    return if (half % 1.0 == 0.0) half.toInt().toString() else half.toString()
 }

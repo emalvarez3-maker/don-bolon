@@ -15,6 +15,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures.compose = true
     compileOptions {
@@ -47,4 +48,8 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // Real org.json for JVM tests; the Android stub throws.
     testImplementation("org.json:json:20240303")
+
+    // The portion bench runs on the phone, where the AI key lives.
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
 }

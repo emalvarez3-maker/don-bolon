@@ -82,6 +82,18 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
     var showAdvice by remember { mutableStateOf(false) }
     var addingDish by remember { mutableStateOf(false) }
     var windowStart by remember { mutableStateOf(p0.windowStart) }
+    var handSetup by remember { mutableStateOf(false) }
+
+    if (handSetup) {
+        Box(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding()) {
+            HandSetup(
+                state.profile.hand,
+                onSave = { h -> model.store.edit { it.copy(profile = it.profile.copy(hand = h)) }; handSetup = false },
+                onCancel = { handSetup = false },
+            )
+        }
+        return
+    }
 
     fun num(s: String) = s.replace(',', '.').toDoubleOrNull()
     val draft = p0.copy(
@@ -96,7 +108,8 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
     fun save() {
         model.store.edit { s ->
             val weights = if (onboarding && s.weights.isEmpty()) listOf(ec.donbolon.app.data.WeightEntry(java.time.LocalDate.now(), draft.weightKg)) else s.weights
-            s.copy(profile = draft, weights = weights)
+            // The hand is saved on its own screen, so keep the stored one rather than this form's copy.
+            s.copy(profile = draft.copy(hand = s.profile.hand), weights = weights)
         }
         onClose()
     }
@@ -277,6 +290,22 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
             }
 
             if (!onboarding) {
+                Gap(22.dp)
+                Label("Mi mano")
+                Text(
+                    "Tu mano es la regla que siempre llevas contigo: ponla abierta y plana junto al plato en la foto y Don Bolón mide cada alimento en centímetros.",
+                    color = C.muted, fontSize = 13.sp,
+                )
+                Gap(6.dp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        state.profile.hand?.let { "Palma ${it.palmWidthCm.fmt(1)} cm · dedo medio ${it.middleFingerCm.fmt(1)} cm · pulgar ${it.thumbWidthCm.fmt(1)} cm" }
+                            ?: "Todavía no la mediste",
+                        color = if (state.profile.hand != null) C.text else C.faint, fontSize = 14.sp, modifier = Modifier.weight(1f),
+                    )
+                    QuietButton(if (state.profile.hand != null) "Medir otra vez" else "Medir mi mano") { handSetup = true }
+                }
+
                 Gap(22.dp)
                 Label("Mis platos")
                 Text(
