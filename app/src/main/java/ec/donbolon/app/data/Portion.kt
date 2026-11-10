@@ -207,7 +207,7 @@ object Portion {
      * the dish's real size backs it up, and with neither the AI falls back on a standard plate.
      */
     fun scale(hand: Hand?, dish: Dish?): String = listOfNotNull(
-        hand?.let { it.describe() + " Está abierta y plana junto al plato: úsala como regla principal." },
+        hand?.let { it.describe() + " Si aparece abierta junto al plato, úsala como regla principal; si no aparece, no la supongas." },
         dish?.let { "Está servido en: ${it.describe()} (medida real)." },
     ).joinToString(" ").ifBlank { "No hay mano ni medida del plato: usa como regla un plato llano estándar de 26 cm y los cubiertos." }
 

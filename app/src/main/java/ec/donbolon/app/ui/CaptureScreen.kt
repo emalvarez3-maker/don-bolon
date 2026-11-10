@@ -285,14 +285,14 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                 val asked = clarifications
                 val said = description
                 val (result, measures, used) = withTimeout(ANALYSIS_TIMEOUT_MS) {
-                    // With a photo the AI measures in centimeters and geometry gives the grams; words alone
-                    // have nothing to measure, so they keep the estimate in grams.
-                    val m = if (top == null && sideNow == null) null else runInterruptible(Dispatchers.IO) {
-                        ai.measure(top, sideNow, said, cooking, aiContext(), Portion.scale(state.profile.hand, dish), Portion.densities.keys, asked)
-                    }.takeIf { it.items.isNotEmpty() }
-                    if (m != null) Triple(Analysis(Portion.items(m.items, dish), m.confidence, m.verdict, m.better, m.question), m.items, m.ruler)
-                    else Triple(
-                        runInterruptible(Dispatchers.IO) { ai.analyze(top, said, cooking, aiContext(), dish = dish?.describe(), clarifications = asked) },
+                    // The AI estimates grams directly, with the hand and the dish as its ruler and the side photo for
+                    // height. Measuring centimeters and converting them with densities (Ai.measure + Portion) lost on
+                    // the 40-dish Nutrition5k bench: 47.6 % kcal error vs 26.5 % (2026-11-10), so it stays out of the app.
+                    val ruler = if (top != null || sideNow != null) Portion.scale(state.profile.hand, dish) else null
+                    Triple(
+                        runInterruptible(Dispatchers.IO) {
+                            ai.analyze(top, said, cooking, aiContext(), dish = if (ruler == null) dish?.describe() else null, clarifications = asked, side = sideNow, ruler = ruler)
+                        },
                         emptyList<Measured>(), "estimado",
                     )
                 }

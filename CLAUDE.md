@@ -36,3 +36,4 @@ Toda ejecución pasa estas puertas antes de cerrarse:
 - No tocar el teléfono mientras el usuario lo usa; nunca desbloquearlo ni cambiar ajustes del sistema.
 - Publicar (push, release) se hace en las dos cuentas: `origin` (emalvarez3-maker) y `tebl22`.
 - La mascota es un bolón de queso, nunca un oso; tema oscuro vintage, nada morado ni parecido a Dexter.
+- Medir centímetros con la IA y convertirlos con densidades (`Ai.measure` + `Portion`) perdió en el banco de 40 platos de Nutrition5k (2026-11-10): 47.6 % de error en kcal contra 26.5 % de dejar que la IA estime los gramos directo, y un factor de corrección no lo salva. La app usa `analyze()` con la mano y el plato como regla y la foto de lado. Cualquier cambio en la estimación pasa por el banco (`PortionBench`, en el teléfono) antes de entrar a la app.

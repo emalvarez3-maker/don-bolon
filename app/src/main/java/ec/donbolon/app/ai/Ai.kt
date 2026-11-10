@@ -83,9 +83,12 @@ class Ai(private val provider: Provider, private val key: String) {
     fun analyze(
         photo: Bitmap?, description: String, cooking: String?, context: String, previous: Analysis? = null, answer: String = "",
         dish: String? = null, clarifications: List<Pair<String, String>> = emptyList(),
+        side: Bitmap? = null, ruler: String? = null,
     ): Analysis {
         val ask = buildString {
             append("Analiza esta comida y estima sus nutrientes.\n")
+            if (ruler != null) append("REGLA DE ESCALA: $ruler Úsala para calcular el tamaño real y los gramos de cada alimento.\n")
+            if (photo != null && side != null) append("La primera foto es de arriba; la segunda es de lado: úsala para ver el alto de cada alimento.\n")
             if (previous != null) {
                 append("Tu estimación anterior fue: ${previous.items.joinToString { "${it.name} ${it.grams.toInt()}g" }}.\n")
                 append("Preguntaste: \"${previous.question}\" y la persona respondió: \"$answer\". Corrige la estimación con eso.\n")
@@ -101,8 +104,8 @@ class Ai(private val provider: Provider, private val key: String) {
             append("\n$context")
         }
         val raw = when (provider) {
-            Provider.GEMINI -> gemini(ANALYZE_SYSTEM, listOf(Turn(true, ask, photo)), json = true)
-            Provider.CLAUDE -> claude(ANALYZE_SYSTEM, listOf(Turn(true, ask, photo)), effort = BetaOutputConfig.Effort.HIGH)
+            Provider.GEMINI -> gemini(ANALYZE_SYSTEM, listOf(Turn(true, ask, listOfNotNull(photo, side))), json = true)
+            Provider.CLAUDE -> claude(ANALYZE_SYSTEM, listOf(Turn(true, ask, listOfNotNull(photo, side))), effort = BetaOutputConfig.Effort.HIGH)
             Provider.NINGUNO -> throw AiException("Sin IA configurada")
         }
         return parseAnalysis(raw)
