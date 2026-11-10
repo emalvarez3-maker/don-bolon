@@ -36,8 +36,16 @@ object Reminders {
 
     enum class Kind { WATER, FAST_OPEN, FAST_CLOSING }
 
-    /** The next moment worth checking, across water and fasting, after [now]. */
-    fun next(s: AppState, now: LocalDateTime): Pair<LocalDateTime, Kind>? {
+    /**
+     * The next moment worth checking, across water and fasting, after [now]. When several kinds
+     * fall on the same minute (16:8 at 12–20 closes-in-1-hour at 19:00, a water hour too) the
+     * fasting one wins the tie; [nextAll] gives every kind due then, and the alarm fires them all.
+     */
+    fun next(s: AppState, now: LocalDateTime): Pair<LocalDateTime, Kind>? =
+        nextAll(s, now)?.let { (at, kinds) -> at to kinds.first() }
+
+    /** The next instant after [now] and every kind due at it, fasting kinds first. */
+    fun nextAll(s: AppState, now: LocalDateTime): Pair<LocalDateTime, List<Kind>>? {
         val out = mutableListOf<Pair<LocalDateTime, Kind>>()
         for (day in listOf(now.toLocalDate(), now.toLocalDate().plusDays(1))) {
             if (s.settings.waterReminders) waterHours.forEach { out += day.atTime(it, 0) to Kind.WATER }
@@ -46,22 +54,33 @@ object Reminders {
                 out += day.atTime(Fast.closes(s.profile)).minusHours(1) to Kind.FAST_CLOSING
             }
         }
-        return out.filter { it.first.isAfter(now) }.minByOrNull { it.first }
+        val upcoming = out.filter { it.first.isAfter(now) }
+        val at = upcoming.minOfOrNull { it.first } ?: return null
+        val kinds = upcoming.filter { it.first == at }.map { it.second }.distinct()
+            .sortedBy { if (it == Kind.WATER) 1 else 0 }
+        return at to kinds
     }
 
     fun schedule(context: Context) {
         val s = Store.get(context).state.value
         val am = context.getSystemService(AlarmManager::class.java)
-        val (at, kind) = next(s, LocalDateTime.now()) ?: run {
-            am.cancel(tick(context, Kind.WATER)); return
+        val (at, kinds) = nextAll(s, LocalDateTime.now()) ?: run {
+            am.cancel(tick(context, listOf(Kind.WATER))); return
         }
-        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), tick(context, kind))
+        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli(), tick(context, kinds))
     }
 
-    private fun tick(context: Context, kind: Kind) = PendingIntent.getBroadcast(
-        context, 1, Intent(context, ReminderReceiver::class.java).setAction(ReminderReceiver.TICK).putExtra("kind", kind.name),
+    /** One alarm carries every kind due at its instant, so none is dropped on a tie. */
+    private fun tick(context: Context, kinds: List<Kind>) = PendingIntent.getBroadcast(
+        context, 1, Intent(context, ReminderReceiver::class.java).setAction(ReminderReceiver.TICK)
+            .putExtra("kind", kinds.first().name).putExtra("kinds", kinds.joinToString(",") { it.name }),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
+
+    /** The kinds an alarm intent carries; an alarm booked by an older version only has "kind". */
+    fun kindsOf(kinds: String?, kind: String?): List<Kind> =
+        (kinds?.takeIf { it.isNotBlank() } ?: kind.orEmpty()).split(",")
+            .mapNotNull { name -> runCatching { Kind.valueOf(name.trim()) }.getOrNull() }.distinct()
 
     /** Water drunk by now should follow the waking day; nudge only when clearly behind. */
     fun waterBehind(s: AppState, now: LocalDateTime): Pair<Int, Int>? {
@@ -118,6 +137,16 @@ object Reminders {
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(open)
             .setAutoCancel(true)
+            // The text carries diary numbers: on the lock screen show only a generic line.
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(
+                NotificationCompat.Builder(context, CHANNEL)
+                    .setSmallIcon(R.drawable.ic_stat_bolon)
+                    .setColor(0xFF9CC285.toInt())
+                    .setContentTitle("Don Bolón")
+                    .setContentText("Un recordatorio")
+                    .build()
+            )
         if (drinkAction) {
             val drink = PendingIntent.getBroadcast(
                 context, 2, Intent(context, ReminderReceiver::class.java).setAction(ReminderReceiver.DRINK),
@@ -140,8 +169,7 @@ class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             TICK -> {
-                val kind = runCatching { Reminders.Kind.valueOf(intent.getStringExtra("kind").orEmpty()) }.getOrNull()
-                if (kind != null) Reminders.fire(context, kind)
+                Reminders.kindsOf(intent.getStringExtra("kinds"), intent.getStringExtra("kind")).forEach { Reminders.fire(context, it) }
                 Reminders.schedule(context)
             }
             DRINK -> {

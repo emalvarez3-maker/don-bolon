@@ -8,7 +8,7 @@ import java.time.LocalDate
 
 class CompositionTest {
     private val today = LocalDate.of(2026, 10, 23)
-    private val me = Profile(sex = Sex.HOMBRE, age = 25, heightCm = 172.0, weightKg = 80.0, priorities = Priorities(0.9, 0.8, 0.4, 0.6, 0.5))
+    private val sample = Profile(sex = Sex.HOMBRE, age = 25, heightCm = 172.0, weightKg = 80.0, priorities = Priorities(0.9, 0.8, 0.4, 0.6, 0.5))
 
     @Test fun rfmForMenMatchesTheHandCalculation() {
         assertEquals(24.0, Progress.rfm(Sex.HOMBRE, 172.0, 86.0)!!, 1e-9) // 64 − 20 × 2
@@ -36,28 +36,30 @@ class CompositionTest {
 
     @Test fun compositionPairsEachWaistWithTheClosestSmoothedWeight() {
         val s = AppState(
-            profile = me,
+            profile = sample,
             weights = listOf(WeightEntry(today.minusDays(30), 90.0), WeightEntry(today.minusDays(3), 80.0)),
             waist = mapOf(today.minusDays(28) to 90.0, today.minusDays(5) to 86.0, today.minusDays(250) to 100.0),
         )
         val c = Progress.composition(s, 6, today)
         assertEquals(listOf(today.minusDays(28), today.minusDays(5)), c.map { it.date }) // the old one is out of the window
         assertEquals(90.0, c[0].weightKg, 1e-9) // trend on day −30
-        assertEquals(89.0, c[1].weightKg, 1e-9) // trend on day −3: 90 + 0.1 × (80 − 90)
+        // Trend on day −3, 27 days after the first weigh-in: α = 1 − 0.9^27 (time-aware smoothing).
+        val trend = 90.0 + (1 - Math.pow(0.9, 27.0)) * (80.0 - 90.0)
+        assertEquals(trend, c[1].weightKg, 1e-9)
         assertEquals(24.0, c[1].fatPct, 1e-9)
-        assertEquals(89.0 * 0.24, c[1].fatKg, 1e-9)
+        assertEquals(trend * 0.24, c[1].fatKg, 1e-9)
         c.forEach { assertEquals(it.weightKg, it.fatKg + it.leanKg, 1e-9) }
     }
 
     @Test fun compositionUsesTheProfileWeightBeforeAnyWeighIn() {
-        val c = Progress.composition(AppState(profile = me, waist = mapOf(today to 86.0)), 6, today)
+        val c = Progress.composition(AppState(profile = sample, waist = mapOf(today to 86.0)), 6, today)
         assertEquals(1, c.size)
         assertEquals(80.0, c[0].weightKg, 1e-9)
         assertEquals(19.2, c[0].fatKg, 1e-9)
     }
 
     @Test fun compositionIsEmptyWithoutWaist() {
-        val s = AppState(profile = me, weights = listOf(WeightEntry(today.minusDays(3), 80.0)))
+        val s = AppState(profile = sample, weights = listOf(WeightEntry(today.minusDays(3), 80.0)))
         assertTrue(Progress.composition(s, 6, today).isEmpty())
     }
 }

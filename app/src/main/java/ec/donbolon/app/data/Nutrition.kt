@@ -75,19 +75,23 @@ object Nutrition {
         if (delta < 0) {
             val maxDeficit = p.weightKg * 0.01 * 7700 / 7
             if (tdee - kcal > maxDeficit) { kcal = tdee - maxDeficit; capped = true }
-            val floor = if (p.sex == Sex.HOMBRE) 1500.0 else 1200.0
+            // The 1500/1200 floor never rises above maintenance: a small, sedentary body can burn
+            // less than that, and then the safe answer is maintenance, not a "surplus".
+            val floor = min(if (p.sex == Sex.HOMBRE) 1500.0 else 1200.0, tdee)
             if (kcal < floor) { kcal = floor; floored = true }
         } else {
             val maxSurplus = p.weightKg * 0.015 * 7700 / 30
             if (kcal - tdee > maxSurplus) { kcal = tdee + maxSurplus; capped = true }
         }
         val pct = ((kcal / tdee - 1) * 100).roundToInt()
+        val lowBurn = floored && kcal >= tdee
         why += Why(
             "Gasto diario ${tdee.roundToInt()} kcal: metabolismo en reposo ${bmr.roundToInt()} × actividad ${p.activity.factor}.",
-            "Mifflin–St Jeor (1990), la ecuación más precisa según Frankenfield et al. (2005); factores FAO/OMS",
+            "Mifflin–St Jeor (1990), la ecuación más precisa según Frankenfield et al. (2005); factores 1,2–1,9 de uso común con Harris–Benedict (McArdle, Katch & Katch, 1996), dentro de los rangos de actividad física (PAL) de FAO/OMS/UNU (2004)",
         )
         why += Why(
             when {
+                lowBurn -> "Tu gasto es bajo: mantenimiento, y consulta a un profesional antes de recortar."
                 pct <= -3 -> "Déficit de ${-pct}%: lo bastante para bajar grasa, no tanto como para perder músculo."
                 pct >= 3 -> "Superávit de $pct%: crecer sin acumular grasa de más."
                 else -> "Mantenimiento: el peso queda estable mientras mejoras composición."
@@ -144,13 +148,20 @@ object Nutrition {
     }
 
     /**
-     * Exponentially smoothed weight (α = 0.1, as in Hacker's Diet): daily water swings of
+     * Exponentially smoothed weight (α = 0.1 per day, as in Hacker's Diet): daily water swings of
      * ±1–2 kg hide the real trend, and seeing only the trend reduces the urge to react to noise.
+     * The smoothing is per day, not per entry: after a gap of n days α = 1 − 0.9ⁿ, which is what
+     * n daily steps toward the new reading would give. With two or three weigh-ins a week a
+     * per-entry α would lag the real weight by kilos.
      */
     fun trend(weights: List<WeightEntry>): List<Pair<LocalDate, Double>> {
         var t: Double? = null
+        var prev: LocalDate? = null
         return weights.sortedBy { it.date }.map { w ->
-            t = t?.let { it + 0.1 * (w.kg - it) } ?: w.kg
+            val days = prev?.let { (w.date.toEpochDay() - it.toEpochDay()).coerceAtLeast(1) } ?: 1
+            val alpha = 1 - Math.pow(1 - 0.1, days.toDouble())
+            t = t?.let { it + alpha * (w.kg - it) } ?: w.kg
+            prev = w.date
             w.date to t!!
         }
     }

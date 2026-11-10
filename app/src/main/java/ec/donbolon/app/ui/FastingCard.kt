@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ec.donbolon.app.data.AppState
@@ -40,7 +41,8 @@ fun FastingCard(state: AppState) {
     val total = if (f.eating) p.windowHours * 60.0 else (24 - p.windowHours) * 60.0
     val done = if (f.eating) total - f.minutesToChange else (f.hoursFasted * 60).coerceAtMost(total)
     val frac by animateFloatAsState((done / total).toFloat().coerceIn(0f, 1f), tween(700), label = "fast")
-    val color = if (f.eating) C.accent else C.water
+    // Sage while eating, quiet grey-green while fasting: blue belongs to water only.
+    val color = if (f.eating) C.accent else C.muted
 
     Panel(padding = 16.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -61,11 +63,11 @@ fun FastingCard(state: AppState) {
                     fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = color,
                 )
                 Text(
-                    if (f.eating) "Cierra a las ${f.closes.format(hm)} · quedan ${Fast.format(f.minutesToChange)}"
-                    else "Tu ventana abre a las ${f.opens.format(hm)} · en ${Fast.format(f.minutesToChange)}",
-                    color = C.muted, fontSize = 13.sp,
+                    if (f.eating) "Cierra a las ${f.closes.format(hm)}, en ${Fast.format(f.minutesToChange)}"
+                    else "Abre a las ${f.opens.format(hm)}, en ${Fast.format(f.minutesToChange)}",
+                    color = C.muted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                Text("${p.fastLabel} · agua, café negro y té no lo rompen", color = C.faint, fontSize = 11.sp)
+                Text("${p.fastLabel} · agua, café negro y té no lo rompen", color = C.faint, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

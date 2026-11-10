@@ -76,6 +76,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
     var aiOn by remember { mutableStateOf(model.ai().available) }
     var changeKey by remember { mutableStateOf(false) }
     var wipe by remember { mutableStateOf(false) }
+    var forgetAll by remember { mutableStateOf(false) }
     var science by remember { mutableStateOf(false) }
     var windowHours by remember { mutableStateOf(p0.windowHours) }
     var sleepHour by remember { mutableStateOf(p0.sleepHour) }
@@ -226,7 +227,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
             // The evidence-based suggestion, built from bedtime and the hours they already eat.
             Gap(10.dp)
             Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(C.card).padding(14.dp)) {
-                Text("Recomendado para ti", color = C.gold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text("Recomendado para ti", color = C.accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                 Text(
                     "%d:%d · de %02d:00 a %02d:00".format(24 - advice.hours, advice.hours, advice.start, advice.end),
                     fontWeight = FontWeight.SemiBold, fontSize = 16.sp,
@@ -246,7 +247,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
                 }
             }
             Gap(12.dp)
-            Field(goalWeight, { goalWeight = it }, "Peso meta kg (opcional)", number = true)
+            Field(goalWeight, { goalWeight = it }, "Peso meta (kg)", number = true, placeholder = "Opcional")
             Gap(18.dp)
 
             if (valid) Panel {
@@ -277,7 +278,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
             Label("Inteligencia artificial")
             Gap(8.dp)
             if (aiOn && !changeKey && Ai.keyRejected) {
-                Text("✗ ${if (state.settings.provider == Provider.CLAUDE) "Anthropic" else "Google"} rechazó la llave guardada. Pega la que usas ahora:", color = C.over, fontSize = 13.sp)
+                Text("✗ ${if (state.settings.provider == Provider.CLAUDE) "Anthropic" else "Google"} rechazó la llave guardada. Pega la que usas ahora:", color = C.text, fontSize = 13.sp)
                 Gap(8.dp)
                 ConnectAi(model) { aiOn = true; changeKey = false }
             } else if (aiOn && !changeKey) {
@@ -324,7 +325,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
                             { model.store.edit { s -> s.copy(dishes = s.dishes.map { if (it.id == d.id) it.copy(size = (it.size - step).coerceAtLeast(step)) else it }) } },
                             { model.store.edit { s -> s.copy(dishes = s.dishes.map { if (it.id == d.id) it.copy(size = it.size + step) else it }) } },
                         ) { Text("${d.size.toInt()} ${d.kind.unit}", fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 8.dp)) }
-                        if (state.dishes.size > 1) IconButton({ model.store.edit { s -> s.copy(dishes = s.dishes.filterNot { it.id == d.id }) } }, Modifier.size(32.dp)) {
+                        if (state.dishes.size > 1) IconButton({ model.store.edit { s -> s.copy(dishes = s.dishes.filterNot { it.id == d.id }) } }) {
                             Icon(Icons.Filled.Close, "Quitar", tint = C.faint, modifier = Modifier.size(16.dp))
                         }
                     }
@@ -340,15 +341,15 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
                 state.memories.forEach { m ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("· ${m.text}", fontSize = 14.sp, modifier = Modifier.weight(1f))
-                        IconButton({ model.store.edit { s -> s.copy(memories = s.memories.filterNot { it.id == m.id }) } }, Modifier.size(32.dp)) {
+                        IconButton({ model.store.edit { s -> s.copy(memories = s.memories.filterNot { it.id == m.id }) } }) {
                             Icon(Icons.Filled.Close, "Olvidar", tint = C.faint, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
                 val learned = state.corrections.map { it.food.lowercase() }.distinct().size
-                if (learned > 0) Text("Ha aprendido tus porciones reales de $learned alimentos.", color = C.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
+                if (learned > 0) Text("Ha aprendido tus porciones reales de ${plural(learned, "alimento", "alimentos")}.", color = C.muted, fontSize = 13.sp, modifier = Modifier.padding(top = 4.dp))
                 if (state.memories.isNotEmpty() || learned > 0) {
-                    QuietButton("Olvidar todo", color = C.over) { model.store.edit { it.copy(memories = emptyList(), corrections = emptyList()) } }
+                    QuietButton("Olvidar todo", color = C.muted) { forgetAll = true }
                 }
             }
 
@@ -379,7 +380,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
                     )
                 }
                 Gap(10.dp)
-                QuietButton("Borrar todos mis datos", color = C.over) { wipe = true }
+                QuietButton("Borrar todos mis datos", color = C.muted) { wipe = true }
             }
             Gap(16.dp)
             Text(
@@ -403,7 +404,7 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
             title = { Text("Nuevo plato") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Field(name, { name = it }, "Nombre (ej. plato azul de la abuela)")
+                    Field(name, { name = it }, "Nombre", placeholder = "Plato azul de la abuela")
                     FlowChips(ec.donbolon.app.data.Dish.Kind.entries.map { it.label }, kind.label) { l -> kind = ec.donbolon.app.data.Dish.Kind.entries.first { it.label == l } }
                     Field(size, { size = it }, if (kind == ec.donbolon.app.data.Dish.Kind.PLATO) "Diámetro en cm" else "Capacidad en ml", number = true)
                 }
@@ -421,12 +422,26 @@ fun ProfileScreen(model: AppModel, onboarding: Boolean, onClose: () -> Unit) {
         )
     }
 
+    if (forgetAll) AlertDialog(
+        onDismissRequest = { forgetAll = false },
+        containerColor = C.card,
+        title = { Text("¿Olvidar todo lo que sabe de ti?") },
+        text = { Text("Don Bolón olvida lo que le contaste y las porciones que aprendió. Tus comidas no se tocan. No se puede deshacer.") },
+        confirmButton = {
+            QuietButton("Olvidar", color = C.text) {
+                model.store.edit { it.copy(memories = emptyList(), corrections = emptyList()) }
+                forgetAll = false
+            }
+        },
+        dismissButton = { QuietButton("Cancelar", color = C.muted) { forgetAll = false } },
+    )
+
     if (wipe) AlertDialog(
         onDismissRequest = { wipe = false },
         containerColor = C.card,
         title = { Text("¿Borrar todo?") },
         text = { Text("Se borran comidas, fotos, pesos, planes y chat. No se puede deshacer.") },
-        confirmButton = { QuietButton("Borrar", color = C.over) { model.store.wipe(); wipe = false } },
+        confirmButton = { QuietButton("Borrar", color = C.text) { model.store.wipe(); wipe = false } },
         dismissButton = { QuietButton("Cancelar", color = C.muted) { wipe = false } },
     )
 }

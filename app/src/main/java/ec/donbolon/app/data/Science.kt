@@ -18,22 +18,22 @@ object Science {
     val principles = listOf(
         Principle(
             "Registrar",
-            "No te pido ser contador. En 22 estudios, los que más registraban eran los que más bajaban, aunque anotaran mal. Una foto chueca vale más que una comida olvidada.",
+            "No te pido ser contador. En una revisión de 22 estudios, registrar más se asoció con bajar más, aunque la evidencia era modesta. Una foto chueca de hoy me sirve más que una comida olvidada.",
             "Burke, Wang & Sevick (2011), J Am Diet Assoc",
         ),
         Principle(
             "La báscula",
-            "En un ensayo con pesaje diario, el 43% bajó al menos 5% de su peso; en el grupo sin báscula, el 7%. Y no les dio más ansiedad. Pésate, pero cree en la línea, no en el número del día.",
+            "En un ensayo de 6 meses, pesarse a diario con báscula conectada, gráfica y correos semanales llevó al 42,6% a bajar al menos 5%, frente al 6,8% del grupo que esperaba su turno, y sin efectos psicológicos adversos. Pésate, pero cree en la línea, no en el número del día.",
             "Steinberg et al. (2013), Obesity; Steinberg et al. (2014), Am J Prev Med",
         ),
         Principle(
             "Dormir",
             "Dormir poco te hace comer unas 385 kcal más al día sin gastar más. Son como cuatro panes y medio que nadie te invitó. La almohada también hace dieta.",
-            "Al Khatib et al. (2018), Eur J Clin Nutr (meta-análisis)",
+            "Al Khatib et al. (2017), Eur J Clin Nutr 71:614 (meta-análisis)",
         ),
         Principle(
             "Comer tarde",
-            "Mismas calorías, pero más tarde: más hambre al día siguiente y menos gasto de energía. Por eso tu cocina cierra con tu ventana, no a medianoche.",
+            "Mismas calorías, pero comiendo más tarde: en un ensayo con 16 personas hubo más hambre durante el día y menos gasto de energía despierto. Por eso tu cocina cierra con tu ventana, no a medianoche.",
             "Vujović et al. (2022), Cell Metabolism",
         ),
         Principle(
@@ -98,8 +98,8 @@ object Science {
         ),
         Principle(
             "Surfear el antojo",
-            "Mirar el antojo como una ola que sube y baja, sin pelearle, redujo los antojos de cigarrillo y, en otro programa, los de comida. Tres minutos y la ola pasa sola.",
-            "Bowen & Marlatt (2009), Psychol Addict Behav; Alberts et al. (2012), Appetite",
+            "Mirar el antojo como una ola que sube y baja, sin pelearle: el antojo no se achicó, pero los fumadores que lo practicaron fumaron menos esa semana. En un programa de 8 semanas, también bajaron los antojos de comida. Tres minutos conmigo y la dejas pasar.",
+            "Bowen & Marlatt (2009), Psychol Addict Behav; Alberts, Thewissen & Raes (2012), Appetite",
         ),
         Principle(
             "Proteína que llena",
@@ -118,7 +118,7 @@ object Science {
         ),
         Principle(
             "La cintura cuenta",
-            "La cintura dice más de tu salud que el peso solo; un panel internacional pidió medirla como un signo vital. Si baja aunque la báscula no se mueva, estás ganando músculo.",
+            "La cintura dice más de tu salud que el peso solo; un panel internacional pidió medirla como un signo vital y bajarla como meta en sí. Si baja aunque la báscula no se mueva, igual vas ganando.",
             "Ross et al. (2020), Nat Rev Endocrinol (consenso)",
         ),
     )
@@ -145,11 +145,11 @@ object Science {
 
         if (now.hour >= 23 || now.hour < 5) out += Tip(
             Mood.SLEEPY, pick(
-                "Grrr… ya es tarde, $name. Dormir poco te cobra unas 385 kcal de hambre mañana. La cama, ya.",
+                "Grrr… ya es tarde, $name. Dormir poco suele traer unas 385 kcal más de comida al día. La cama, ya.",
                 "Hmpf. A esta hora el único bolón despierto soy yo. Apaga eso: dormir también te marca el abdomen.",
                 "La cocina cerró y yo también. Si te da hambre, es sueño disfrazado. Agua y a dormir.",
             ),
-            "Dormir poco suma ~385 kcal al día (Al Khatib et al., 2018, meta-análisis)",
+            "Dormir poco suma ~385 kcal al día (Al Khatib et al., 2017, meta-análisis)",
         )
         val focus = state.focus?.takeIf { it.weekStart == Memory.monday(today) }
         if (focus != null && today.dayOfWeek == java.time.DayOfWeek.MONDAY) out += Tip(
@@ -170,7 +170,7 @@ object Science {
                 "Si te ruge la panza, medio litro de agua: muchas veces es sed.",
                 "El ayuno no quema más que cualquier déficit; te sirve si te ayuda a comer menos sin sufrir.",
             ),
-            "El ayuno rinde igual que contar calorías; su ventaja es la adherencia (Lowe et al., 2020; Liu et al., 2022)",
+            "El ayuno no bajó más peso que comer a cualquier hora, contando calorías o sin contarlas (Liu et al., 2022; Lowe et al., 2020)",
         )
         if (fast != null && fast.eating && meals.isEmpty()) out += Tip(
             Mood.HAPPY, pick(
@@ -181,16 +181,23 @@ object Science {
         )
         if (fast != null && fast.eating && fast.minutesToChange <= 90 && t.protein < targets.protein * 0.7) out += Tip(
             Mood.GRUMPY, "Tu ventana cierra en ${Fast.format(fast.minutesToChange)} y te faltan ${(targets.protein - t.protein).toInt()} g de proteína. Que la última comida sea de las que construyen músculo.",
-            "Con menos horas para comer, la proteína es lo que primero se queda corta (Lowe et al., 2020)",
+            "En el ensayo TREAT el grupo con ventana perdió algo de masa magra (Lowe et al., 2020); proteína alta y pesas la protegen en déficit (Longland et al., 2016)",
         )
-        // While fasting there is nothing to log yet, so no nagging.
-        if (meals.isEmpty() && (fast == null || fast.eating)) out += if (now.hour >= 11) Tip(
+        // Window open (or no fasting): only then do "eat this next" lines make sense today.
+        val open = fast == null || fast.eating
+        // Minutes since the eating window opened today; without fasting the day "opens" at 09:00,
+        // so the grumpy nudge waits until 11:00 either way: two hours to get to a first meal.
+        val sinceOpen = if (fast == null) (now.hour * 60 + now.minute - 9 * 60).toLong()
+        else if (fast.eating) state.profile.windowHours * 60L - fast.minutesToChange else -1L
+        // While fasting there is nothing to log yet, so no nagging; right after the window opens,
+        // the "ventana abierta" line already says it.
+        if (meals.isEmpty() && open && (fast == null || sinceOpen >= 120)) out += if (sinceOpen >= 120) Tip(
             Mood.GRUMPY, pick(
                 "¿Nada registrado todavía? Grrr. No te pido perfección, te pido una foto.",
                 "Plato que no se registra igual cuenta. Tómale foto.",
-                "En 22 estudios, los que registraban bajaban más. Tú todavía vas en cero hoy. Hmpf.",
+                "En 22 estudios, registrar más iba con bajar más. Tú todavía vas en cero hoy. Hmpf.",
             ),
-            "Registrar con constancia es lo que más predice el resultado (Burke et al., 2011)", Tip.Action.CAPTURE,
+            "Registrar más se asocia con bajar más (Burke et al., 2011)", Tip.Action.CAPTURE,
         ) else Tip(
             Mood.CALM,
             pick("Hmpf. Buenos días, $name. Cuando comas algo, me lo enseñas.", "Buen día. Yo vigilo; tú comes y me muestras.", "Arriba, $name. Hoy toca hacerlo simple: comer, foto, seguir."),
@@ -234,11 +241,13 @@ object Science {
             ),
         )
         if (meals.isNotEmpty() && t.protein < targets.protein * 0.5 && now.hour >= 14) out += Tip(
-            Mood.GRUMPY, "Llevas ${t.protein.toInt()} g de proteína de ${targets.protein}. Ni un bolón vive solo de verde: pollo, huevo, atún o chochos en la siguiente.",
+            Mood.GRUMPY, "Llevas ${t.protein.toInt()} g de proteína de ${targets.protein}. Ni un bolón vive solo de verde: pollo, huevo, atún o chochos " +
+                (if (open) "en la siguiente." else "en tu primera comida de mañana."),
             "La proteína es lo que más sacia por caloría (Leidy et al., 2015)",
         )
         if (meals.size >= 2 && t.fiber < targets.fiber * 0.4 && now.hour >= 17) out += Tip(
-            Mood.CALM, "Poca fibra hoy (${t.fiber.toInt()} g). Media porción de verduras o una fruta en la cena y listo.",
+            Mood.CALM, "Poca fibra hoy (${t.fiber.toInt()} g). " +
+                (if (open) "Media porción de verduras o una fruta en la cena y listo." else "Mañana, verduras o una fruta al abrir tu ventana y listo."),
             "25–30 g de fibra al día se asocian a menos enfermedad (Reynolds et al., 2019, The Lancet)",
         )
         if (now.hour in 15..20 && water < targets.waterGlasses / 3) out += Tip(
@@ -256,7 +265,7 @@ object Science {
             ),
             "Robinson et al. (2013), Am J Clin Nutr; Andrade et al. (2008), J Am Diet Assoc",
         )
-        if (meals.isNotEmpty() && left > 0) out += Tip(
+        if (meals.isNotEmpty() && left > 0 && open) out += Tip(
             Mood.CALM, pick("Te quedan ${left.toInt()} kcal. Úsalas con cabeza, no con antojo.", "Quedan ${left.toInt()} kcal en la cuenta. ¿Te armo algo con buena proteína?"),
             null, Tip.Action.CHAT,
         )
@@ -274,7 +283,7 @@ object Science {
     const val COACH_PERSONA = """Eres Don Bolón, un bolón de queso ecuatoriano (verde frito relleno de queso, recién salido del sartén) gruñón, que es coach de nutrición y psicología alimentaria. Hablas en español de Ecuador, cálido por dentro y gruñón por fuera: refunfuñas ("grrr", "hmpf"), eres directo y con humor seco, pero NUNCA humillas, nunca comentas el cuerpo de la persona, nunca usas culpa ni vergüenza. Tu gruñido es contra los hábitos, jamás contra la persona.
 
 Tu método se basa en evidencia:
-- Registrar con constancia importa más que la precisión (Burke 2011): un registro aproximado vale; nunca digas que registrar a medias no sirve.
+- Registrar más se asocia con bajar más (Burke 2011): un registro aproximado vale; nunca digas que registrar a medias no sirve.
 - Si la persona hace ayuno intermitente (ver datos), no la regañes por no comer fuera de su ventana: es su estrategia.
 - Restricción flexible, no reglas de todo-o-nada; ningún alimento está prohibido (Westenhoefer 1999).
 - Después de un desliz: autocompasión y volver a la normalidad en la siguiente comida, sin compensar con ayuno ni ejercicio de castigo (Adams & Leary 2007).
@@ -282,7 +291,7 @@ Tu método se basa en evidencia:
 - Hambre física vs. emocional: nombrar la emoción, escala de hambre 1-10, surfear el antojo (Bowen & Marlatt 2009).
 - Proteína alta (1.6-2.2 g/kg en déficit), fibra, verduras y comida poco procesada para saciedad (Leidy 2015, Rolls 2009, Hall 2019).
 - Comer sin pantallas y despacio; dormir bien; cambiar el entorno antes que pelear con la voluntad.
-- Hábitos: ~66 días; "nunca fallar dos veces seguidas" (Lally 2010).
+- Hábitos: ~66 días en promedio (rango 18-254); fallar un día no frenó el hábito, lo que cuenta es volver (Lally 2010).
 
 Reglas:
 - Respuestas cortas para leer en el celular: máximo ~120 palabras salvo que pidan detalle. Usa viñetas cuando ayuden.
@@ -300,10 +309,11 @@ Reglas:
             "- ${m.slot.label}: " + m.items.joinToString(", ") { "${it.name} ${it.grams.toInt()}g (${it.kcal.toInt()} kcal)" } +
                 (m.reason?.let { " [motivo: ${it.label}, hambre ${m.hunger ?: "?"}/10]" } ?: "")
         }.ifBlank { "- (nada registrado aún)" }
-        val week = (1..7).map { today.minusDays(it.toLong()) }.map { state.totalsOn(it).kcal.toInt() }
+        // A day with nothing logged is unknown, not a day of zero calories: say so, or the AI reasons about a fast that never happened.
+        val week = (1..7).map { today.minusDays(it.toLong()) }.map { d -> if (state.mealsOn(d).isEmpty()) "sin registro" else state.totalsOn(d).kcal.toInt().toString() }
         val emotional = state.meals.filter { it.date >= today.minusDays(7) && it.reason?.physical == false }.groupingBy { it.reason!!.label }.eachCount()
         return """DATOS DEL USUARIO (hoy ${today}, ${LocalTime.now().withNano(0).withSecond(0)}):
-Nombre: ${p.name.ifBlank { "—" }} · ${p.sex.name.lowercase()} · ${p.age} años · ${p.heightCm.toInt()} cm · ${"%.1f".format(p.weightKg)} kg · actividad ${p.activity.label.lowercase()} · prioridades (0-100): ${Priorities.names.zip(p.priorities.values).joinToString { "${it.first} ${(it.second * 100).toInt()}" }}${p.goalWeightKg?.let { " hasta $it kg" } ?: ""}
+Perfil: ${p.sex.name.lowercase()} · ${p.age} años · ${p.heightCm.toInt()} cm · ${"%.1f".format(p.weightKg)} kg · actividad ${p.activity.label.lowercase()} · prioridades (0-100): ${Priorities.names.zip(p.priorities.values).joinToString { "${it.first} ${(it.second * 100).toInt()}" }}${p.goalWeightKg?.let { " hasta $it kg" } ?: ""}
 Metas diarias: ${targets.kcal} kcal · P ${targets.protein} g · C ${targets.carbs} g · G ${targets.fat} g · fibra ${targets.fiber} g (TDEE ${targets.tdee})
 Hoy lleva: ${t.kcal.toInt()} kcal · P ${t.protein.toInt()} g · C ${t.carbs.toInt()} g · G ${t.fat.toInt()} g · fibra ${t.fiber.toInt()} g · le quedan ${(targets.kcal - t.kcal).toInt()} kcal
 Comidas de hoy:

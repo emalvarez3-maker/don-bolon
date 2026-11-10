@@ -29,6 +29,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -37,10 +39,13 @@ import ec.donbolon.app.data.Journey
 import ec.donbolon.app.data.Mood
 import ec.donbolon.app.data.Progress
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
+private val monthYear = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.forLanguageTag("es-EC"))
 private val PathHeight = 176.dp
 private val MascotSize = 46.dp
 
@@ -55,23 +60,40 @@ internal fun journeyLine(j: Journey): String {
 }
 
 /**
+ * When the goal is reached at this pace, the only place the app says it: "a este ritmo llegas en
+ * 9 semanas (marzo 2027)". If the current target never gets there, says so. Null at the goal.
+ */
+internal fun arrivalLine(j: Journey, reachesGoal: LocalDate?, today: LocalDate = LocalDate.now()): String? = when {
+    j.leftKg < 0.05 -> null
+    reachesGoal != null -> "a este ritmo llegas ${Progress.humanWeeks(today, reachesGoal)} (${reachesGoal.format(monthYear)})"
+    else -> "con tus calorías actuales no llegas: revisa tus prioridades en Perfil"
+}
+
+/**
  * "Tu camino": a winding road from "Inicio" to a little flag at "Meta". The walked part is
  * solid sage, the rest dashed; milestone dots glow gold once passed (they pop as Don Bolón
  * walks past them on first composition) and Don Bolón stands where the user is now.
  */
 @Composable
-fun JourneyPath(j: Journey, reachesGoal: LocalDate?, modifier: Modifier = Modifier) {
-    val walk = remember { Animatable(0f) }
+fun JourneyPath(
+    j: Journey,
+    reachesGoal: LocalDate?,
+    modifier: Modifier = Modifier,
+    initialFraction: Float = 0f,
+    onWalked: (Float) -> Unit = {},
+) {
+    // Starts where Don Bolón stood last time, so coming back to the tab only animates the change.
+    val walk = remember { Animatable(initialFraction.coerceIn(0f, 1f)) }
     LaunchedEffect(j.fraction) {
-        walk.animateTo(j.fraction.toFloat(), tween(1400, delayMillis = 150, easing = FastOutSlowInEasing))
+        val target = j.fraction.toFloat()
+        if (walk.value != target) walk.animateTo(target, tween(1400, delayMillis = 150, easing = FastOutSlowInEasing))
+        onWalked(target)
     }
     val today = LocalDate.now()
 
     Column(modifier) {
         Text(journeyLine(j), fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = C.text)
-        if (reachesGoal != null && j.leftKg >= 0.05) {
-            Text("a este ritmo llegas ${Progress.humanWeeks(today, reachesGoal)}", fontSize = 13.sp, color = C.muted)
-        }
+        arrivalLine(j, reachesGoal, today)?.let { Text(it, fontSize = 13.sp, color = C.muted) }
         BoxWithConstraints(Modifier.fillMaxWidth().height(PathHeight)) {
             val density = LocalDensity.current
             val w = with(density) { maxWidth.toPx() }
@@ -79,7 +101,8 @@ fun JourneyPath(j: Journey, reachesGoal: LocalDate?, modifier: Modifier = Modifi
             val road = remember(w, h) { Road(w, h, with(density) { 26.dp.toPx() }, with(density) { 54.dp.toPx() }, with(density) { 30.dp.toPx() }) }
             val milestones = j.milestones.dropLast(1).map { j.at(it.kg).toFloat() to it }
 
-            Canvas(Modifier.fillMaxWidth().height(PathHeight)) {
+            val summary = "Camino de ${j.startKg.fmt(1)} a ${j.goalKg.fmt(1)} kg: ${journeyLine(j)}"
+            Canvas(Modifier.fillMaxWidth().height(PathHeight).semantics { contentDescription = summary }) {
                 val now = walk.value
                 val width = 7.dp.toPx()
 

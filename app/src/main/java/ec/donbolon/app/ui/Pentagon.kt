@@ -2,8 +2,8 @@ package ec.donbolon.app.ui
 
 import android.graphics.Paint
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -21,15 +21,37 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.PI
-import kotlin.math.abs
-import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * A radar of the five priorities. Drag (or tap) along an axis to set that value; the
- * corner nearest to the finger's angle is the one that moves.
+ * A radar of the five priorities. Grab a corner's dot and drag it along its axis to set that
+ * value. Touches that don't start on a dot pass through, so scrolling over the radar scrolls.
  */
+/** How far from a corner's dot a touch still grabs it. */
+private val HandleReach = 28.dp
+
+/**
+ * The corner whose dot is closest to (x, y) and within [reach] pixels, or -1. Same geometry as
+ * the drawing: center of a w×h box, radius 68% of half the short side, first axis pointing up.
+ */
+fun pentagonHandle(values: List<Double>, x: Float, y: Float, w: Float, h: Float, reach: Float): Int {
+    val n = values.size
+    if (n == 0) return -1
+    val r = minOf(w, h) / 2 * 0.68
+    var best = -1
+    var bestD = reach.toDouble()
+    values.forEachIndexed { i, v ->
+        val a = -PI / 2 + i * 2 * PI / n
+        val k = v.coerceIn(0.04, 1.0)
+        val dx = x - (w / 2 + r * k * cos(a))
+        val dy = y - (h / 2 + r * k * sin(a))
+        val d = kotlin.math.sqrt(dx * dx + dy * dy)
+        if (d <= bestD) { bestD = d; best = i }
+    }
+    return best
+}
+
 @Composable
 fun Pentagon(values: List<Double>, labels: List<String>, size: Dp = 260.dp, onChange: (Int, Double) -> Unit) {
     val current by rememberUpdatedState(values)
@@ -37,30 +59,33 @@ fun Pentagon(values: List<Double>, labels: List<String>, size: Dp = 260.dp, onCh
     val n = values.size
     fun angle(i: Int) = -PI / 2 + i * 2 * PI / n
 
-    fun pick(pos: Offset, w: Float, h: Float, lock: Boolean) {
-        val c = Offset(w / 2, h / 2)
+    fun move(i: Int, pos: Offset, w: Float, h: Float) {
         val r = minOf(w, h) / 2 * 0.68f
-        val d = pos - c
-        val a = atan2(d.y.toDouble(), d.x.toDouble())
-        if (!lock || active < 0) {
-            active = (0 until n).minBy { i -> abs(((a - angle(i) + 3 * PI) % (2 * PI)) - PI) }
-        }
-        // Project the finger onto the active axis so sideways wobble doesn't matter.
-        val along = d.x * cos(angle(active)) + d.y * sin(angle(active))
-        onChange(active, (along / r).coerceIn(0.0, 1.0))
+        val d = pos - Offset(w / 2, h / 2)
+        // Project the finger onto the axis so sideways wobble doesn't matter.
+        val along = d.x * cos(angle(i)) + d.y * sin(angle(i))
+        onChange(i, (along / r).coerceIn(0.0, 1.0))
     }
 
     Canvas(
         Modifier.size(size)
             .pointerInput(Unit) {
-                detectDragGestures(
-                    onDragStart = { pick(it, this.size.width.toFloat(), this.size.height.toFloat(), lock = false) },
-                    onDragEnd = { active = -1 },
-                    onDragCancel = { active = -1 },
-                ) { change, _ -> pick(change.position, this.size.width.toFloat(), this.size.height.toFloat(), lock = true) }
-            }
-            .pointerInput(Unit) {
-                detectTapGestures { pick(it, this.size.width.toFloat(), this.size.height.toFloat(), lock = false); active = -1 }
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val w = this.size.width.toFloat()
+                    val h = this.size.height.toFloat()
+                    val i = pentagonHandle(current, down.position.x, down.position.y, w, h, HandleReach.toPx())
+                    if (i < 0) return@awaitEachGesture // not on a dot: leave it to the scroll
+                    down.consume()
+                    active = i
+                    while (true) {
+                        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) { change.consume(); break }
+                        move(i, change.position, w, h)
+                        change.consume()
+                    }
+                    active = -1
+                }
             },
     ) {
         val c = Offset(this.size.width / 2, this.size.height / 2)

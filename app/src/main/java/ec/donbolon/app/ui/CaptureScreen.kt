@@ -5,6 +5,8 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.speech.RecognizerIntent
+import android.util.Log
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -56,6 +58,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -65,7 +69,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -77,7 +80,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -103,10 +105,15 @@ import ec.donbolon.app.data.Reason
 import ec.donbolon.app.data.Science
 import ec.donbolon.app.data.Slot
 import ec.donbolon.app.data.totals
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import java.io.File
 import java.time.LocalDate
 import java.time.LocalTime
@@ -121,6 +128,36 @@ private val thinkingLines = listOf(
 )
 
 private enum class Step { COMPOSE, THINKING, REVIEW }
+
+/** The rules behind re-running an estimate, free of Compose so they can be tested. */
+internal object CaptureRules {
+    /** Adds an answered question to what the AI must keep in mind; a blank answer or a repeat adds nothing. */
+    fun clarify(list: List<Pair<String, String>>, question: String, answer: String): List<Pair<String, String>> {
+        val q = question.trim()
+        val a = answer.trim()
+        if (a.isBlank() || list.any { it.first == q && it.second == a }) return list
+        return list + (q to a)
+    }
+
+    /** What the person added themselves ("¿Falta algo?", the libreta), as it is now: it survives a new estimate. */
+    fun kept(items: List<FoodItem>, added: List<Boolean>): List<FoodItem> = items.filterIndexed { i, _ -> added.getOrElse(i) { false } }
+
+    /** The AI's items as they are now, without what the person added. */
+    fun fromAi(items: List<FoodItem>, added: List<Boolean>): List<FoodItem> = items.filterIndexed { i, _ -> !added.getOrElse(i) { false } }
+
+    /** True when the person changed, renamed or removed anything the AI estimated. */
+    fun adjusted(ai: List<FoodItem>, items: List<FoodItem>, added: List<Boolean>): Boolean = fromAi(items, added) != ai
+
+    /** What the AI really used to size the food. */
+    fun rulerLabel(ruler: String): String = when (ruler) {
+        "mano" -> "medido con tu mano"
+        "plato" -> "medido con tu plato"
+        else -> "tamaño estimado"
+    }
+}
+
+private const val FAILED = "Algo falló. Intenta otra vez."
+private const val ANALYSIS_TIMEOUT_MS = 90_000L
 
 /**
  * Logging a meal: photo (or voice, or words) → the AI estimates every ingredient → the user
@@ -140,59 +177,74 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
     var photo by remember { mutableStateOf<Bitmap?>(null) }
     // The view from the side gives the height the top view can't, so volumes stop being guesses.
     var side by remember { mutableStateOf<Bitmap?>(null) }
-    var sideAsked by remember { mutableStateOf(false) }
     var handSetup by remember { mutableStateOf(false) }
-    // What the AI measured for each food (by name), shown in the review as "9 × 7 × 3 cm".
-    val measured = remember { mutableStateMapOf<String, Measured>() }
+    // What the AI used as a ruler in the last measurement: "mano", "plato" or "estimado".
+    var ruler by remember { mutableStateOf("estimado") }
     var description by rememberSaveable { mutableStateOf("") }
     var cooking by rememberSaveable { mutableStateOf<String?>(null) }
     var slot by rememberSaveable { mutableStateOf(Slot.forHour(LocalTime.now().hour)) }
     var at by remember { mutableStateOf(LocalTime.now().withSecond(0).withNano(0)) }
-    var shots by remember { mutableIntStateOf(0) }
     var hunger by rememberSaveable { mutableStateOf(6f) }
     var reason by rememberSaveable { mutableStateOf<Reason?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var analysis by remember { mutableStateOf<Analysis?>(null) }
+    // Every question the AI asked and the person answered; each later estimate gets all of them.
+    var clarifications by remember { mutableStateOf(listOf<Pair<String, String>>()) }
     var answer by remember { mutableStateOf("") }
     var missing by remember { mutableStateOf("") }
     var addingMissing by remember { mutableStateOf(false) }
     var nudged by remember { mutableStateOf(false) }
     var searching by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
     var mindful by remember { mutableStateOf(false) }
     var details by remember { mutableStateOf(false) }
     var source by remember { mutableStateOf("foto") }
+    var job by remember { mutableStateOf<Job?>(null) }
+    var confirmDiscard by remember { mutableStateOf(false) }
+    // A dish chip tapped after the person adjusted the items: re-running waits for their yes.
+    var pendingDish by remember { mutableStateOf<Pair<String?, Boolean>?>(null) }
     var dishId by rememberSaveable { mutableStateOf(state.settings.lastDish) }
     fun chooseDish(id: String?) {
         dishId = id
         model.store.edit { it.copy(settings = it.settings.copy(lastDish = id)) }
     }
     val items = remember { mutableStateListOf<FoodItem>() }
-    // The grams each item had when it arrived, so the portion slider scales from there.
+    // Per item, by position: the grams it had when it arrived (the slider scales from there),
+    // whether the person added it, and what the AI measured for it.
     val bases = remember { mutableStateListOf<Double>() }
+    val added = remember { mutableStateListOf<Boolean>() }
+    val sizes = remember { mutableStateListOf<Measured?>() }
 
-    fun setItems(list: List<FoodItem>) { items.clear(); items.addAll(list); bases.clear(); bases.addAll(list.map { it.grams }) }
-    fun addItem(f: FoodItem) { items.add(f); bases.add(f.grams) }
-    fun removeAt(i: Int) { items.removeAt(i); bases.removeAt(i) }
+    fun setItems(list: List<FoodItem>, measures: List<Measured> = emptyList()) {
+        items.clear(); items.addAll(list)
+        bases.clear(); bases.addAll(list.map { it.grams })
+        added.clear(); added.addAll(list.map { false })
+        sizes.clear(); sizes.addAll(list.indices.map { measures.getOrNull(it) })
+    }
+    fun addItem(f: FoodItem) { items.add(f); bases.add(f.grams); added.add(true); sizes.add(null) }
+    fun removeAt(i: Int) { items.removeAt(i); bases.removeAt(i); added.removeAt(i); sizes.removeAt(i) }
 
     val camFile = remember { File(context.cacheDir, "camera").apply { mkdirs() }.resolve("plato.jpg") }
     val camUri = remember { FileProvider.getUriForFile(context, "${context.packageName}.files", camFile) }
+    // A new top photo (camera or gallery) is a new plate: the old side view no longer belongs to it.
     fun accept(uri: Uri?) {
         External.back()
-        if (uri != null) scope.launch {
-            photo = withContext(Dispatchers.IO) { Images.load(context, uri) }
-            if (photo != null) shots++ else error = "No pude abrir esa foto. Prueba otra."
+        scope.launch {
+            val b = if (uri == null) null else withContext(Dispatchers.IO) { Images.load(context, uri) }
+            // The full-size original is only needed until it is decoded.
+            withContext(Dispatchers.IO) { Images.clearCamera(context) }
+            if (b != null) { photo = b; side = null; error = null } else if (uri != null) error = "No pude abrir esa foto. Prueba otra."
         }
     }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> accept(if (ok) camUri else null) }
     val sideFile = remember { File(context.cacheDir, "camera").apply { mkdirs() }.resolve("plato-lado.jpg") }
     val sideUri = remember { FileProvider.getUriForFile(context, "${context.packageName}.files", sideFile) }
-    var sideShots by remember { mutableIntStateOf(0) }
     val sideCamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         External.back()
         scope.launch {
-            if (ok) side = withContext(Dispatchers.IO) { Images.load(context, sideUri) }
-            // Taken or skipped, the side view's turn is over: the analysis can start.
-            sideShots++
+            val b = if (ok) withContext(Dispatchers.IO) { Images.load(context, sideUri) } else null
+            withContext(Dispatchers.IO) { Images.clearCamera(context) }
+            if (b != null) side = b else if (ok) error = "No pude abrir esa foto. Prueba otra."
         }
     }
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { accept(it) }
@@ -202,7 +254,7 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         if (r.resultCode == Activity.RESULT_OK && !said.isNullOrBlank()) description = listOf(description, said).filter { it.isNotBlank() }.joinToString(", ")
     }
     fun shoot() = runCatching { External.open = true; camera.launch(camUri) }.onFailure { External.open = false; error = "No encontré una app de cámara." }
-    fun shootSide() = runCatching { External.open = true; sideCamera.launch(sideUri) }.onFailure { External.open = false; sideShots++ }
+    fun shootSide() = runCatching { External.open = true; sideCamera.launch(sideUri) }.onFailure { External.open = false; error = "No encontré una app de cámara." }
     fun pick() = runCatching { External.open = true; gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
         .onFailure { External.open = false; error = "No pude abrir la galería." }
     fun listen() = runCatching {
@@ -215,55 +267,63 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         )
     }.onFailure { External.open = false; error = "Este teléfono no tiene dictado por voz." }
 
-    // With the AI connected, open the camera right away: one tap from home to a photo.
+    // With the AI connected, open the camera for the top view right away: one tap from home to a
+    // photo. Nothing else opens on its own: the side view waits in its slot for the person.
     LaunchedEffect(Unit) { if (ai.available) shoot() }
 
     fun aiContext() = Science.context(state, targets) + "\n" + Memory.forAnalysis(state)
 
-    fun runAnalysis(previous: Analysis? = null) {
+    fun runAnalysis() {
+        if (job?.isActive == true) return
         error = null
         step = Step.THINKING
-        scope.launch {
+        job = scope.launch {
             try {
                 val dish = state.dishes.firstOrNull { it.id == dishId }
                 val top = photo
-                // With a photo the AI measures in centimeters and geometry gives the grams; words alone
-                // have nothing to measure, so they keep the estimate in grams.
-                val measuredResult = if (top == null && side == null) null else withContext(Dispatchers.IO) {
-                    val said = listOf(description, answer.takeIf { previous != null }.orEmpty()).filter { it.isNotBlank() }.joinToString(". ")
-                    ai.measure(top, side, said, cooking, aiContext(), Portion.scale(state.profile.hand, dish), Portion.densities.keys)
-                }.takeIf { it.items.isNotEmpty() }
-                val result = if (measuredResult != null) {
-                    measured.clear()
-                    measuredResult.items.forEach { measured[it.name] = it }
-                    Analysis(
-                        measuredResult.items.map { Portion.item(it, Portion.capacityMl(dish)) },
-                        measuredResult.confidence, measuredResult.verdict, measuredResult.better, measuredResult.question,
+                val sideNow = side
+                val asked = clarifications
+                val said = description
+                val (result, measures, used) = withTimeout(ANALYSIS_TIMEOUT_MS) {
+                    // With a photo the AI measures in centimeters and geometry gives the grams; words alone
+                    // have nothing to measure, so they keep the estimate in grams.
+                    val m = if (top == null && sideNow == null) null else runInterruptible(Dispatchers.IO) {
+                        ai.measure(top, sideNow, said, cooking, aiContext(), Portion.scale(state.profile.hand, dish), Portion.densities.keys, asked)
+                    }.takeIf { it.items.isNotEmpty() }
+                    if (m != null) Triple(Analysis(Portion.items(m.items, dish), m.confidence, m.verdict, m.better, m.question), m.items, m.ruler)
+                    else Triple(
+                        runInterruptible(Dispatchers.IO) { ai.analyze(top, said, cooking, aiContext(), dish = dish?.describe(), clarifications = asked) },
+                        emptyList<Measured>(), "estimado",
                     )
-                } else {
-                    measured.clear()
-                    withContext(Dispatchers.IO) { ai.analyze(photo, description, cooking, aiContext(), previous, answer, dish?.describe()) }
                 }
+                // What the person added by hand is theirs: a new estimate replaces only the AI's part.
+                val keep = CaptureRules.kept(items.toList(), added.toList())
                 analysis = result
-                setItems(result.items)
+                ruler = used
+                setItems(result.items, measures)
+                keep.forEach { addItem(it) }
                 source = if (photo != null) "foto" else "texto"
                 answer = ""
                 step = Step.REVIEW
+            } catch (e: TimeoutCancellationException) {
+                error = Ai.SLOW; step = Step.COMPOSE
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: AiException) {
-                error = e.message; step = Step.COMPOSE
+                error = e.message ?: FAILED; step = Step.COMPOSE
             } catch (e: Exception) {
-                error = "Algo falló: ${e.message ?: e.javaClass.simpleName}"; step = Step.COMPOSE
+                Log.w("DonBolon", Ai.scrub(e.toString()))
+                error = FAILED; step = Step.COMPOSE
             }
         }
     }
 
-    // Photo first: when the top view arrives the side camera opens once (skipping it is fine), and
-    // when that turn ends the analysis starts.
-    LaunchedEffect(shots) {
-        if (shots == 0 || !ai.available || step != Step.COMPOSE) return@LaunchedEffect
-        if (!sideAsked && side == null) { sideAsked = true; shootSide() } else runAnalysis()
+    // Stops waiting for the AI and goes back to the meal as it was: nothing typed or shot is lost.
+    fun cancelAnalysis() {
+        job?.cancel()
+        job = null
+        step = Step.COMPOSE
     }
-    LaunchedEffect(sideShots) { if (sideShots > 0 && ai.available && step == Step.COMPOSE && photo != null) runAnalysis() }
 
     fun quick(list: List<FoodItem>, from: String) {
         analysis = null
@@ -272,16 +332,30 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         step = Step.REVIEW
     }
 
+    fun openSearch(q: String) { searchQuery = q.trim(); searching = true }
+
     fun addMissing() {
-        if (missing.isBlank()) return
+        val text = missing.trim()
+        if (text.isBlank() || addingMissing) return
         addingMissing = true
         scope.launch {
-            val found = runCatching { withContext(Dispatchers.IO) { ai.analyze(null, missing, null, aiContext()) }.items }
-                .getOrElse { FoodDb.guess(missing) }
-            found.forEach { addItem(it) }
-            if (found.isEmpty()) searching = true
-            missing = ""
-            addingMissing = false
+            try {
+                val found = try {
+                    withTimeout(ANALYSIS_TIMEOUT_MS) { runInterruptible(Dispatchers.IO) { ai.analyze(null, text, null, aiContext(), clarifications = clarifications) }.items }
+                } catch (e: TimeoutCancellationException) {
+                    FoodDb.guess(text)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (e !is AiException) Log.w("DonBolon", Ai.scrub(e.toString()))
+                    FoodDb.guess(text)
+                }
+                found.forEach { addItem(it) }
+                // Nothing found: the words stay where they were and the libreta opens with them.
+                if (found.isEmpty()) openSearch(text) else missing = ""
+            } finally {
+                addingMissing = false
+            }
         }
     }
 
@@ -296,17 +370,22 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
             )
         )
         analysis?.let { a ->
-            val fixes = Memory.corrections(a.items, items.toList())
+            val fixes = Memory.corrections(a.items, CaptureRules.fromAi(items.toList(), added.toList()))
             if (fixes.isNotEmpty()) model.store.edit { it.copy(corrections = it.corrections + fixes) }
         }
+        Images.clearCamera(context)
         onDone()
     }
+
+    val hasWork = photo != null || side != null || description.isNotBlank() || items.isNotEmpty()
+    fun close() { if (hasWork) confirmDiscard = true else onDone() }
 
     val emotional = reason?.physical == false && hunger <= 4f
     val total = items.totals()
     val leftAfter = targets.kcal - state.totalsOn(LocalDate.now()).kcal - total.kcal
 
     if (handSetup) {
+        BackHandler { if (!External.justReturned()) handSetup = false }
         Box(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding()) {
             HandSetup(
                 state.profile.hand,
@@ -317,9 +396,19 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         return
     }
 
+    // Back walks one step back instead of throwing the meal away.
+    BackHandler(enabled = step != Step.COMPOSE || hasWork) {
+        if (External.justReturned()) return@BackHandler
+        when (step) {
+            Step.REVIEW -> step = Step.COMPOSE
+            Step.THINKING -> cancelAnalysis()
+            Step.COMPOSE -> confirmDiscard = true
+        }
+    }
+
     Column(Modifier.fillMaxSize().background(C.bg).statusBarsPadding().navigationBarsPadding().imePadding()) {
         Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onDone) { Icon(Icons.Filled.Close, "Cerrar", tint = C.muted) }
+            IconButton({ close() }) { Icon(Icons.Filled.Close, "Cerrar", tint = C.muted) }
             Text(
                 when (step) { Step.COMPOSE -> "Registrar comida"; Step.THINKING -> "Analizando"; Step.REVIEW -> "Revisa y guarda" },
                 style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f),
@@ -329,7 +418,7 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
 
         AnimatedContent(step, Modifier.weight(1f), transitionSpec = { fadeIn(tween(250)) togetherWith fadeOut(tween(200)) }, label = "step") { s ->
             when (s) {
-                Step.THINKING -> Thinking(photo)
+                Step.THINKING -> Thinking(photo, onCancel = { cancelAnalysis() })
 
                 Step.COMPOSE -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
                     // A refused key is fixed right here, without leaving the meal half written.
@@ -340,39 +429,15 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                     TwoViewCapture(
                         top = photo, side = side, handReady = state.profile.hand != null,
                         onShootTop = { shoot() }, onShootSide = { shootSide() }, onPickTop = { pick() }, onClearSide = { side = null },
+                        onSetupHand = { handSetup = true },
                     )
-                    if (state.profile.hand == null) {
-                        QuietButton("✋ Medir mi mano ahora", color = C.gold) { handSetup = true }
-                    }
-                    Gap(18.dp)
-
-                    Label("O cuéntamelo")
-                    Gap(8.dp)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Field(description, { description = it }, "Ej: bolón de queso, 2 huevos, café con leche", Modifier.weight(1f), singleLine = false)
-                        HGap(8.dp)
-                        Box(
-                            Modifier.size(52.dp).clip(CircleShape).background(C.raised).clickable { listen() },
-                            contentAlignment = Alignment.Center,
-                        ) { Text("🎤", fontSize = 22.sp) }
-                    }
-                    Gap(12.dp)
-                    Text("¿Cómo se cocinó? (opcional)", color = C.muted, fontSize = 13.sp)
-                    Gap(8.dp)
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        cookings.forEach { c -> Chip(c, cooking == c) { cooking = if (cooking == c) null else c } }
-                    }
-                    Gap(14.dp)
-                    Text("¿En qué lo serviste? Con la medida real calculo mejor las porciones", color = C.muted, fontSize = 13.sp)
-                    Gap(8.dp)
-                    DishChips(state.dishes, dishId) { chooseDish(it) }
 
                     val usuals = remember(state.meals.size) { Memory.usuals(state).take(6) }
                     val recent = remember(state.meals.size) {
                         state.meals.sortedByDescending { it.time }.distinctBy { m -> m.items.joinToString { it.name } }.take(3)
                     }
                     if (usuals.isNotEmpty() || recent.isNotEmpty()) {
-                        Gap(22.dp)
+                        Gap(16.dp)
                         Label("Rápido")
                         Gap(8.dp)
                         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -390,12 +455,32 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                             }
                         }
                     }
+                    Gap(18.dp)
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        HintField(description, { description = it }, "¿Qué comiste?", "Ej: bolón de queso, 2 huevos, café con leche", Modifier.weight(1f), singleLine = false)
+                        HGap(8.dp)
+                        Box(
+                            Modifier.size(52.dp).clip(CircleShape).background(C.raised).clickable(onClickLabel = "Dictar por voz") { listen() },
+                            contentAlignment = Alignment.Center,
+                        ) { Text("🎤", fontSize = 22.sp) }
+                    }
+                    Gap(12.dp)
+                    Text("¿Cómo se cocinó? (opcional)", color = C.muted, fontSize = 13.sp)
+                    Gap(8.dp)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        cookings.forEach { c -> Chip(c, cooking == c) { cooking = if (cooking == c) null else c } }
+                    }
+                    Gap(14.dp)
+                    Text("¿En qué lo serviste? Con la medida real calculo mejor las porciones", color = C.muted, fontSize = 13.sp)
+                    Gap(8.dp)
+                    DishChips(state.dishes, dishId) { chooseDish(it) }
 
                     error?.let {
                         Gap(14.dp)
                         Text(
-                            "⚠ $it", color = C.over, fontSize = 13.sp,
-                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.over.copy(alpha = 0.12f)).padding(12.dp),
+                            "⚠ $it", color = C.text, fontSize = 13.sp,
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.raised).padding(12.dp),
                         )
                     }
                     Gap(24.dp)
@@ -404,12 +489,16 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                 Step.REVIEW -> LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
                     item {
                         Summary(photo, total.kcal, total.protein, total.carbs, total.fat, analysis?.confidence)
-                        if (analysis != null) {
+                        analysis?.let { a ->
                             // Changing the dish here re-runs the estimate with the new scale.
                             Gap(10.dp)
                             Text("Servido en (toca para cambiar y recalcular):", color = C.faint, fontSize = 12.sp)
                             Gap(6.dp)
-                            DishChips(state.dishes, dishId) { id -> chooseDish(id); runAnalysis() }
+                            DishChips(state.dishes, dishId) { id ->
+                                if (id == dishId) return@DishChips
+                                if (CaptureRules.adjusted(a.items, items.toList(), added.toList())) pendingDish = id to true
+                                else { chooseDish(id); runAnalysis() }
+                            }
                         }
                         Gap(14.dp)
                         analysis?.let { a ->
@@ -427,15 +516,18 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                             if (a.question.isNotBlank()) {
                                 Gap(12.dp)
                                 Column(
-                                    Modifier.fillMaxWidth().clip(Shape).border(1.dp, C.gold.copy(alpha = 0.6f), Shape).background(C.card).padding(14.dp),
+                                    Modifier.fillMaxWidth().clip(Shape).border(1.dp, C.line, Shape).background(C.card).padding(14.dp),
                                 ) {
-                                    Text("Una pregunta para afinar", color = C.gold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("Una pregunta para afinar", color = C.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                                     Gap(4.dp)
-                                    Text(a.question, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                                    Text(a.question, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = C.text)
                                     Gap(8.dp)
                                     Field(answer, { answer = it }, "Tu respuesta")
                                     Gap(8.dp)
-                                    PrimaryButton("Corregir con IA", enabled = answer.isNotBlank()) { runAnalysis(a) }
+                                    PrimaryButton("Corregir con IA", enabled = answer.isNotBlank()) {
+                                        clarifications = CaptureRules.clarify(clarifications, a.question, answer)
+                                        runAnalysis()
+                                    }
                                 }
                             }
                             Gap(16.dp)
@@ -446,10 +538,14 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                         Label("Lo que comiste")
                         Gap(8.dp)
                     }
-                    items(items.size, key = { "$it-${items.getOrNull(it)?.name}" }) { i ->
+                    items(items.size) { i ->
                         items.getOrNull(i)?.let { f ->
-                            val size = measured[f.name]?.let { m -> "medido con ${if (state.profile.hand != null) "tu mano" else "tu plato"}: ${cm(m.lengthCm)} × ${cm(m.widthCm)} × ${cm(m.heightCm)} cm" }
-                            ItemCard(f, bases.getOrElse(i) { f.grams }, size, onChange = { items[i] = it }, onRemove = { removeAt(i) })
+                            val base = bases.getOrElse(i) { f.grams }
+                            // The size line describes the AI's portion: once the grams change it no longer applies.
+                            val size = sizes.getOrNull(i)?.takeIf { f.grams == base }?.let { m ->
+                                "${CaptureRules.rulerLabel(ruler)}: ${cm(m.lengthCm)} × ${cm(m.widthCm)} × ${cm(m.heightCm)} cm"
+                            }
+                            ItemCard(f, base, size, onChange = { items[i] = it }, onRemove = { removeAt(i) })
                         }
                         Gap(8.dp)
                     }
@@ -457,12 +553,12 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                         // Add what the photo missed: words go through the AI too.
                         if (ai.available) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Field(missing, { missing = it }, "¿Falta algo? Ej: una cola, salsa de ají", Modifier.weight(1f))
+                                HintField(missing, { missing = it }, "¿Falta algo?", "Ej: una cola, salsa de ají", Modifier.weight(1f))
                                 HGap(8.dp)
                                 QuietButton(if (addingMissing) "…" else "Añadir") { addMissing() }
                             }
                         }
-                        QuietButton("+ Buscar en la libreta", color = C.muted) { searching = true }
+                        QuietButton("+ Buscar en la libreta", color = C.muted) { openSearch(missing) }
                         Gap(10.dp)
 
                         val dayAfter = state.totalsOn(LocalDate.now()).kcal + total.kcal
@@ -565,18 +661,18 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         if (step != Step.THINKING) {
             Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
                 if (step == Step.COMPOSE) {
-                    val canGo = photo != null || description.isNotBlank()
+                    val canGo = photo != null || side != null || description.isNotBlank()
                     if (ai.available) {
-                        PrimaryButton(if (error != null) "Reintentar con IA" else if (photo != null) "Analizar foto con IA" else "Analizar con IA", enabled = canGo) { runAnalysis() }
+                        PrimaryButton(if (error != null) "Reintentar" else "Analizar", enabled = canGo) { runAnalysis() }
                         // The notebook is only a lifeboat for when the AI can't be reached.
                         if (error != null && description.isNotBlank()) {
                             QuietButton("Estimar con mi libreta mientras tanto", Modifier.align(Alignment.CenterHorizontally), color = C.muted) {
-                                quick(FoodDb.guess(description), "libreta"); if (items.isEmpty()) searching = true
+                                quick(FoodDb.guess(description), "libreta"); if (items.isEmpty()) openSearch(description)
                             }
                         }
                     } else if (description.isNotBlank()) {
                         QuietButton("Estimar con mi libreta (menos preciso)", Modifier.align(Alignment.CenterHorizontally), color = C.muted) {
-                            quick(FoodDb.guess(description), "libreta"); if (items.isEmpty()) searching = true
+                            quick(FoodDb.guess(description), "libreta"); if (items.isEmpty()) openSearch(description)
                         }
                     }
                 } else {
@@ -587,7 +683,47 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         }
     }
 
-    if (searching) FoodSearch(onPick = { addItem(it); searching = false }, onDismiss = { searching = false })
+    if (searching) FoodSearch(initial = searchQuery, onPick = { addItem(it); searching = false }, onDismiss = { searching = false })
+
+    if (confirmDiscard) AlertDialog(
+        onDismissRequest = { confirmDiscard = false },
+        containerColor = C.card,
+        title = { Text("¿Descartar esta comida?") },
+        text = { Text("Se borran las fotos y lo que escribiste.", color = C.muted) },
+        confirmButton = {
+            QuietButton("Descartar", color = C.text) {
+                confirmDiscard = false
+                job?.cancel()
+                Images.clearCamera(context)
+                onDone()
+            }
+        },
+        dismissButton = { QuietButton("Seguir aquí", onClick = { confirmDiscard = false }) },
+    )
+
+    pendingDish?.let { (id, _) ->
+        AlertDialog(
+            onDismissRequest = { pendingDish = null },
+            containerColor = C.card,
+            title = { Text("¿Recalcular?") },
+            text = { Text("Se pierden tus ajustes. Lo que añadiste tú se queda.", color = C.muted) },
+            confirmButton = { QuietButton("Recalcular") { pendingDish = null; chooseDish(id); runAnalysis() } },
+            dismissButton = { QuietButton("Cancelar", color = C.muted, onClick = { pendingDish = null }) },
+        )
+    }
+}
+
+/** A text field with a short label and the example as a placeholder, so the label stays readable. */
+@Composable
+private fun HintField(value: String, onChange: (String) -> Unit, label: String, placeholder: String, modifier: Modifier = Modifier, singleLine: Boolean = true) {
+    OutlinedTextField(
+        value, onChange, modifier.fillMaxWidth(), label = { Text(label) }, placeholder = { Text(placeholder, color = C.faint) },
+        singleLine = singleLine, shape = RoundedCornerShape(14.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = C.accent, unfocusedBorderColor = C.line, focusedLabelColor = C.accent, cursorColor = C.accent,
+            focusedContainerColor = C.card, unfocusedContainerColor = C.card,
+        ),
+    )
 }
 
 /** Three dots that fill as the user moves from photo to analysis to saving. */
@@ -600,45 +736,9 @@ private fun StepDots(current: Int) {
     }
 }
 
-/** A camera-style frame: tap anywhere to shoot, or pick from the gallery. */
-@Composable
-private fun Viewfinder(photo: Bitmap?, onCamera: () -> Unit, onGallery: () -> Unit) {
-    Box(
-        Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(28.dp)).background(C.card).clickable(onClick = onCamera),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (photo != null) {
-            Image(photo.asImageBitmap(), "Tu plato", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f)))))
-        } else {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Bolon(Mood.CALM, 96.dp)
-                Gap(10.dp)
-                Text("Tómale foto a tu plato", fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
-                Text("De arriba y con todo a la vista", color = C.muted, fontSize = 13.sp)
-            }
-        }
-        // Viewfinder corners.
-        Canvas(Modifier.fillMaxSize().padding(18.dp)) {
-            val l = 28.dp.toPx()
-            val w = 3.dp.toPx()
-            val c = C.accent.copy(alpha = 0.9f)
-            listOf(Offset(0f, 0f) to Offset(1f, 1f), Offset(size.width, 0f) to Offset(-1f, 1f),
-                Offset(0f, size.height) to Offset(1f, -1f), Offset(size.width, size.height) to Offset(-1f, -1f)).forEach { (o, d) ->
-                drawLine(c, o, Offset(o.x + d.x * l, o.y), w, StrokeCap.Round)
-                drawLine(c, o, Offset(o.x, o.y + d.y * l), w, StrokeCap.Round)
-            }
-        }
-        Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 22.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            Chip(if (photo == null) "📷 Cámara" else "📷 Otra foto", true, onClick = onCamera)
-            Chip("🖼️ Galería", false, onClick = onGallery)
-        }
-    }
-}
-
 /** The photo being "scanned" while the AI works, with Don Bolón thinking and what he is doing. */
 @Composable
-private fun Thinking(photo: Bitmap?) {
+private fun Thinking(photo: Bitmap?, onCancel: () -> Unit) {
     var line by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) { while (true) { delay(1600); line = (line + 1) % thinkingLines.size } }
     val scan by rememberInfiniteTransition(label = "scan").animateFloat(0f, 1f, infiniteRepeatable(tween(1700, easing = LinearEasing), RepeatMode.Reverse), label = "y")
@@ -662,6 +762,8 @@ private fun Thinking(photo: Bitmap?) {
         }
         Gap(6.dp)
         Text("Suele tardar unos segundos", color = C.muted, fontSize = 13.sp)
+        Gap(18.dp)
+        QuietButton("Cancelar", color = C.muted, onClick = onCancel)
     }
 }
 
@@ -680,10 +782,11 @@ private fun Summary(photo: Bitmap?, kcal: Double, protein: Double, carbs: Double
                     Text(" kcal", color = C.muted, modifier = Modifier.padding(bottom = 6.dp))
                 }
                 confidence?.let {
-                    val c = when (it.lowercase()) { "alta" -> C.good; "baja" -> C.over; else -> C.gold }
+                    val high = it.lowercase() == "alta"
+                    val low = it.lowercase() == "baja"
                     Text(
-                        "Confianza $it", color = c, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.clip(CircleShape).background(c.copy(alpha = 0.14f)).padding(horizontal = 10.dp, vertical = 3.dp),
+                        "${if (low) "⚠ " else ""}Confianza $it", color = if (high) C.good else C.muted, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clip(CircleShape).background(if (high) C.good.copy(alpha = 0.14f) else C.raised).padding(horizontal = 10.dp, vertical = 3.dp),
                     )
                 }
             }
@@ -783,8 +886,8 @@ private fun EditItem(f: FoodItem, onSave: (FoodItem) -> Unit, onDismiss: () -> U
 }
 
 @Composable
-fun FoodSearch(onPick: (FoodItem) -> Unit, onDismiss: () -> Unit) {
-    var q by remember { mutableStateOf("") }
+fun FoodSearch(onPick: (FoodItem) -> Unit, onDismiss: () -> Unit, initial: String = "") {
+    var q by remember { mutableStateOf(initial) }
     var customKcal by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -837,8 +940,5 @@ private fun DishChips(dishes: List<ec.donbolon.app.data.Dish>, selected: String?
     }
 }
 
-/** "9", "3.5": half-centimeter precision, which is all a photo can honestly give. */
-private fun cm(x: Double): String {
-    val half = (x * 2).roundToInt() / 2.0
-    return if (half % 1.0 == 0.0) half.toInt().toString() else half.toString()
-}
+/** "9", "3,5": half-centimeter precision, which is all a photo can honestly give, written like [fmt]. */
+private fun cm(x: Double): String = ((x * 2).roundToInt() / 2.0).fmt(1).removeSuffix(",0").removeSuffix(".0")

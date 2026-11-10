@@ -102,10 +102,10 @@ A dark, vintage palette where every color has a job, chosen from research on col
 
 ## 🔒 Privacy and security
 
-- **Your diary never leaves your phone.** It's stored encrypted with AES-256-GCM under a key that lives in the Android Keystore. Cloud backup and device-to-device transfer are disabled.
+- **Your diary is stored encrypted on your phone.** Meals, weights and meal photos are sealed with AES-256-GCM under a key that lives in the Android Keystore. Cloud backup and device-to-device transfer are disabled, and camera originals are deleted once they're no longer needed.
 - **Your AI key is yours.** You type it inside the app and it's encrypted just like your diary. Error messages and logs never show it; at most they say how it starts and how long it is. This repository contains no keys, tokens or personal data.
-- **HTTPS only.** Cleartext traffic is blocked. The only thing sent anywhere, and only when you ask for an analysis, is your photo and description, to the provider you chose (Google Gemini or Anthropic Claude).
-- **Optional lock** with fingerprint, face or PIN.
+- **HTTPS only, and only when you ask.** Cleartext traffic is blocked. When you ask for an analysis or talk to the coach, Don Bolón sends the photo or description to the provider you chose (Google Gemini or Anthropic Claude), together with a summary of your profile and recent intake so the answer fits you: age, sex, height, weight, targets, recent meals and what Don Bolón remembers about your habits. Your name is never sent.
+- **Optional lock** with fingerprint, face or PIN. With it on, the diary is hidden from the recent-apps preview. Reminders on the lock screen never show your numbers.
 - **Works without AI too:** the offline notebook, the menu and the coach fall back to local data.
 
 ## 🚀 Get started

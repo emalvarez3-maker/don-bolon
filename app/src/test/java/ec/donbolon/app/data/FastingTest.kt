@@ -22,7 +22,7 @@ class FastingTest {
         assertFalse(Fast.inWindow(p168, LocalTime.of(8, 0)))
     }
 
-    @Test fun estebansWindowIsNoonToSeven() {
+    @Test fun aNoonToSevenWindowClosesAtSeven() {
         val p = Profile(windowHours = 7, windowStart = 12)
         assertEquals(LocalTime.of(19, 0), Fast.closes(p))
         assertTrue(Fast.inWindow(p, LocalTime.of(18, 59)))

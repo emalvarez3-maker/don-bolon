@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -66,8 +67,11 @@ fun TwoViewCapture(
     onShootSide: () -> Unit,
     onPickTop: () -> Unit,
     onClearSide: () -> Unit,
+    onSetupHand: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Once the top view is in, the side slot is the next step: it gets the light, never a camera of its own accord.
+    val sideNext = top != null && side == null
     Column(modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             ViewSlot(
@@ -80,35 +84,58 @@ fun TwoViewCapture(
                 onShoot = onShootTop,
                 onGallery = onPickTop,
                 onClear = null,
+                highlight = false,
                 modifier = Modifier.weight(1f),
             )
             ViewSlot(
                 title = "De lado",
                 tag = "Opcional · 45°",
-                tagColor = C.muted,
+                tagColor = if (sideNext) C.accent else C.muted,
                 photo = side,
                 guide = { drawSideGuide() },
                 spoken = "Foto de lado, a unos 45 grados, opcional",
                 onShoot = onShootSide,
                 onGallery = null,
                 onClear = onClearSide,
+                highlight = sideNext,
                 modifier = Modifier.weight(1f),
+            )
+        }
+        if (sideNext) {
+            Gap(8.dp)
+            Text(
+                "Una foto de lado mejora el cálculo del alto",
+                color = C.accent, fontSize = 13.sp, fontWeight = FontWeight.Medium, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        if (top == null || side == null) {
+            Gap(6.dp)
+            Text(
+                "Mano abierta y plana junto al plato, toda a la vista",
+                color = C.muted, fontSize = 12.sp, lineHeight = 16.sp, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         }
         if (!handReady) {
             Gap(10.dp)
             Row(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.gold.copy(alpha = 0.09f))
-                    .border(1.dp, C.gold.copy(alpha = 0.22f), RoundedCornerShape(14.dp))
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(C.raised)
+                    .border(1.dp, C.accent.copy(alpha = 0.25f), RoundedCornerShape(14.dp))
+                    .clickable(onClickLabel = "Medir mi mano", role = Role.Button, onClick = onSetupHand)
                     .padding(horizontal = 12.dp, vertical = 10.dp)
                     .semantics(mergeDescendants = true) {},
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Canvas(Modifier.size(26.dp)) {
-                    drawPath(flatHand(Offset(size.width * 0.5f, size.height * 0.98f), size.height * 0.95f), C.gold, style = Stroke(1.6.dp.toPx(), join = StrokeJoin.Round))
+                    drawPath(flatHand(Offset(size.width * 0.5f, size.height * 0.98f), size.height * 0.95f), C.accent, style = Stroke(1.6.dp.toPx(), join = StrokeJoin.Round))
                 }
                 HGap(10.dp)
-                Text("Mide tu mano una vez para que la use como regla", color = C.text.copy(alpha = 0.85f), fontSize = 13.sp, lineHeight = 18.sp)
+                Column(Modifier.weight(1f)) {
+                    Text("Mide tu mano una vez", color = C.text, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text("La uso como regla para las porciones", color = C.muted, fontSize = 12.sp, lineHeight = 16.sp)
+                }
+                Text("Medir ›", color = C.accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -125,13 +152,14 @@ private fun ViewSlot(
     onShoot: () -> Unit,
     onGallery: (() -> Unit)?,
     onClear: (() -> Unit)?,
+    highlight: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val shape = RoundedCornerShape(24.dp)
     val empty = photo == null
     Box(
         modifier.aspectRatio(0.76f).clip(shape).background(C.card)
-            .border(1.dp, if (empty) C.line else C.accent.copy(alpha = 0.35f), shape)
+            .border(if (highlight) 2.dp else 1.dp, if (highlight) C.accent else if (empty) C.line else C.accent.copy(alpha = 0.35f), shape)
             .clickable(onClickLabel = if (empty) "Tomar foto" else "Repetir foto", role = Role.Button, onClick = onShoot)
             .semantics {
                 contentDescription = if (empty) "$spoken. Vacía. Mano abierta y plana junto al plato, toda a la vista"
@@ -150,7 +178,7 @@ private fun ViewSlot(
             Box(Modifier.fillMaxSize().background(Brush.radialGradient(listOf(C.raised, C.card), radius = 420f)))
         }
 
-        Corners(Modifier.fillMaxSize().padding(10.dp), if (empty) C.accent.copy(alpha = 0.55f) else C.accent.copy(alpha = 0.9f))
+        Corners(Modifier.fillMaxSize().padding(10.dp), if (empty && !highlight) C.accent.copy(alpha = 0.55f) else C.accent.copy(alpha = 0.9f))
 
         Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -160,7 +188,7 @@ private fun ViewSlot(
                 }
                 if (!empty && onClear != null) {
                     Box(
-                        Modifier.size(28.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f))
+                        Modifier.minimumInteractiveComponentSize().size(28.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.45f))
                             .clickable(onClickLabel = "Quitar foto de lado", role = Role.Button, onClick = onClear),
                         contentAlignment = Alignment.Center,
                     ) { Icon(Icons.Filled.Close, "Quitar foto de lado", Modifier.size(16.dp), tint = C.text) }
@@ -168,12 +196,6 @@ private fun ViewSlot(
             }
             if (empty) {
                 Canvas(Modifier.fillMaxWidth().weight(1f).padding(vertical = 6.dp), onDraw = guide)
-                Text(
-                    "Mano abierta y plana junto al plato, toda a la vista",
-                    color = C.muted, fontSize = 11.sp, lineHeight = 14.sp, textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Gap(8.dp)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally)) {
                     SlotAction("📷 Cámara", primary = true, label = "Tomar foto ${title.lowercase()}", onClick = onShoot)
                     if (onGallery != null) SlotAction("🖼️", primary = false, label = "Elegir de la galería", onClick = onGallery)
@@ -191,7 +213,7 @@ private fun ViewSlot(
 @Composable
 private fun SlotAction(text: String, primary: Boolean, label: String, onClick: () -> Unit) {
     Box(
-        Modifier.clip(CircleShape)
+        Modifier.minimumInteractiveComponentSize().clip(CircleShape)
             .background(if (primary) C.accent else Color.Black.copy(alpha = 0.35f))
             .border(1.dp, if (primary) Color.Transparent else C.text.copy(alpha = 0.18f), CircleShape)
             .clickable(onClickLabel = label, role = Role.Button, onClick = onClick)

@@ -4,7 +4,9 @@ import android.graphics.Bitmap
 import android.util.Base64
 import com.anthropic.client.okhttp.AnthropicOkHttpClient
 import com.anthropic.core.JsonValue
+import com.anthropic.errors.AnthropicInvalidDataException
 import com.anthropic.errors.AnthropicIoException
+import com.anthropic.errors.AnthropicServiceException
 import com.anthropic.errors.RateLimitException
 import com.anthropic.errors.UnauthorizedException
 import com.anthropic.models.beta.messages.BetaBase64ImageSource
@@ -25,14 +27,28 @@ import ec.donbolon.app.data.Provider
 import ec.donbolon.app.data.Slot
 import ec.donbolon.app.data.objects
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.InterruptedIOException
+import java.net.ConnectException
 import java.net.HttpURLConnection
+import java.net.NoRouteToHostException
 import java.net.URL
+import java.net.UnknownHostException
+import java.text.Normalizer
+import java.time.Duration
 
 /** [badKey]: the provider refused the key itself, so the fix is pasting another one, not retrying. */
 class AiException(message: String, val badKey: Boolean = false) : Exception(message)
+
+/**
+ * Model text made safe to store and show on one line: control characters and line breaks become
+ * spaces, runs of spaces collapse, and the result is cut to [max] characters.
+ */
+fun String.oneLine(max: Int): String =
+    replace(Regex("[\\p{Cntrl}\\u2028\\u2029\\u0085]"), " ").replace(Regex("\\s+"), " ").trim().take(max).trim()
 
 data class Analysis(
     val items: List<FoodItem>,
@@ -50,6 +66,8 @@ data class Measurement(
     val verdict: String,
     val better: String,
     val question: String,
+    /** What the model used as its ruler: "mano", "plato" or "estimado". */
+    val ruler: String = "estimado",
 )
 
 /** Both providers behind one door. Calls block, so run them off the main thread. */
@@ -59,15 +77,20 @@ class Ai(private val provider: Provider, private val key: String) {
 
     /**
      * [answer] is the user's reply to the question a previous pass asked, so a second pass can
-     * correct the first one instead of starting over.
+     * correct the first one instead of starting over. [clarifications] are earlier (question, answer)
+     * pairs the person already answered.
      */
-    fun analyze(photo: Bitmap?, description: String, cooking: String?, context: String, previous: Analysis? = null, answer: String = "", dish: String? = null): Analysis {
+    fun analyze(
+        photo: Bitmap?, description: String, cooking: String?, context: String, previous: Analysis? = null, answer: String = "",
+        dish: String? = null, clarifications: List<Pair<String, String>> = emptyList(),
+    ): Analysis {
         val ask = buildString {
             append("Analiza esta comida y estima sus nutrientes.\n")
             if (previous != null) {
                 append("Tu estimación anterior fue: ${previous.items.joinToString { "${it.name} ${it.grams.toInt()}g" }}.\n")
                 append("Preguntaste: \"${previous.question}\" y la persona respondió: \"$answer\". Corrige la estimación con eso.\n")
             }
+            append(clarify(clarifications))
             if (description.isNotBlank()) append("Lo que la persona dice que comió (confía en esto por sobre la foto si hay conflicto): \"$description\"\n")
             if (cooking != null) append("Método de cocción indicado: $cooking (si es frito, suma el aceite absorbido).\n")
             if (dish != null) append(
@@ -91,10 +114,15 @@ class Ai(private val provider: Provider, private val key: String) {
      * view can't show, and [densityKeys] lists the density table the grams will come from. The grams
      * themselves are computed by [ec.donbolon.app.data.Portion], not by the model.
      */
-    fun measure(top: Bitmap?, side: Bitmap?, description: String, cooking: String?, context: String, scale: String, densityKeys: Collection<String>): Measurement {
+    fun measure(
+        top: Bitmap?, side: Bitmap?, description: String, cooking: String?, context: String, scale: String, densityKeys: Collection<String>,
+        clarifications: List<Pair<String, String>> = emptyList(),
+    ): Measurement {
         val ask = buildString {
             append("Mide cada alimento de esta comida.\n")
             append("REGLA DE ESCALA: $scale\n")
+            append("Si la mano aparece en la foto, úsala como regla principal; si no aparece, usa el plato (su medida real si te la dan) y dilo en reference.\n")
+            append(clarify(clarifications))
             if (top != null) append("La primera foto es DE ARRIBA: úsala para el largo y el ancho de cada alimento.\n")
             if (side != null) append("La ${if (top != null) "segunda" else "única"} foto es DE LADO: úsala para el alto de cada alimento.\n")
             if (side == null) append("No hay foto de lado: estima el alto con la sombra, el borde del plato y lo típico de ese alimento.\n")
@@ -157,8 +185,7 @@ class Ai(private val provider: Provider, private val key: String) {
         val end = raw.lastIndexOf('}')
         val o = if (start >= 0 && end > start) runCatching { JSONObject(raw.substring(start, end + 1)) }.getOrNull() else null
         if (o == null || o.optString("reply").isBlank()) return Reply(raw.trim(), emptyList())
-        val remember = o.optJSONArray("remember")?.let { a -> (0 until a.length()).map { a.optString(it) }.filter { it.isNotBlank() } } ?: emptyList()
-        return Reply(o.optString("reply").trim(), remember)
+        return Reply(o.optString("reply").trim(), remembered(o))
     }
 
     data class Reply(val text: String, val remember: List<String>)
@@ -167,16 +194,10 @@ class Ai(private val provider: Provider, private val key: String) {
     fun check() {
         when (provider) {
             Provider.GEMINI -> gemini("Responde solo: ok", listOf(Turn(true, "ok", null)), json = false, readTimeout = 20_000)
-            Provider.CLAUDE -> claude("Responde solo: ok", listOf(Turn(true, "ok", null)), effort = BetaOutputConfig.Effort.LOW)
+            Provider.CLAUDE -> claude("Responde solo: ok", listOf(Turn(true, "ok", null)), effort = BetaOutputConfig.Effort.LOW, timeout = Duration.ofSeconds(20))
             Provider.NINGUNO -> throw AiException("Sin IA configurada")
         }
     }
-
-    /** Google explains what went wrong in error.message; show that instead of guessing. */
-    private fun googleMessage(body: String, code: Int): String =
-        (runCatching { JSONObject(body).getJSONObject("error").getString("message") }.getOrNull()?.take(220) ?: "error $code")
-            // Some messages quote the key itself; never show or log it.
-            .replace(Regex("AIza[0-9A-Za-z_-]{10,}|AQ\\.[0-9A-Za-z_.-]{10,}|sk-ant-[0-9A-Za-z_-]{10,}"), "[llave]")
 
     /** One message; a meal can carry two photos (from above and from the side). */
     private data class Turn(val user: Boolean, val text: String, val photos: List<Bitmap> = emptyList()) {
@@ -189,7 +210,7 @@ class Ai(private val provider: Provider, private val key: String) {
         return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
     }
 
-    private fun gemini(system: String, turns: List<Turn>, json: Boolean, readTimeout: Int = 90_000): String {
+    private fun gemini(system: String, turns: List<Turn>, json: Boolean, readTimeout: Int = 60_000): String {
         val contents = JSONArray(turns.map { t ->
             val parts = JSONArray()
             t.photos.forEach { parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", jpeg(it)))) }
@@ -229,22 +250,28 @@ class Ai(private val provider: Provider, private val key: String) {
                     code == 404 || code >= 500 -> { last = AiException("Gemini no respondió ($code)."); continue }
                     code !in 200..299 -> throw AiException("Gemini: " + googleMessage(text, code))
                 }
-                val parts = JSONObject(text).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
+                val parts = try {
+                    JSONObject(text).optJSONArray("candidates")?.optJSONObject(0)?.optJSONObject("content")?.optJSONArray("parts")
+                } catch (e: JSONException) { throw AiException(ODD) }
                 val out = parts.objects().joinToString("") { it.optString("text") }
                 if (out.isBlank()) { last = AiException("Gemini no devolvió respuesta."); continue }
                 workingModel = model
                 keyRejected = false
                 return out
             } catch (e: IOException) {
-                last = AiException("Sin conexión. Revisa tu internet.")
+                val err = networkError(e)
+                // A timeout or no network will not get better with another model: answer now instead of hanging for minutes.
+                if (err.message == SLOW || err.message == OFFLINE) throw err
+                last = err
             }
         }
         if ((last as? AiException)?.badKey == true) keyRejected = true
         throw last ?: AiException("Gemini no respondió.")
     }
 
-    private fun claude(system: String, turns: List<Turn>, effort: BetaOutputConfig.Effort): String {
-        val client = AnthropicOkHttpClient.builder().apiKey(key).build()
+    private fun claude(system: String, turns: List<Turn>, effort: BetaOutputConfig.Effort, timeout: Duration = Duration.ofSeconds(75)): String {
+        // No silent retries: one bounded request, so "Analizando" never outlives the timeout.
+        val client = AnthropicOkHttpClient.builder().apiKey(key).timeout(timeout).maxRetries(0).build()
         val messages = turns.map { t ->
             val blocks = buildList {
                 t.photos.forEach {
@@ -279,8 +306,14 @@ class Ai(private val provider: Provider, private val key: String) {
             throw AiException("Anthropic dice que esta llave no es válida. Pega la que usas ahora.", badKey = true)
         } catch (e: RateLimitException) {
             throw AiException("Claude está saturado. Intenta en un minuto.")
+        } catch (e: AnthropicServiceException) {
+            throw claudeError(e.statusCode(), e.message.orEmpty())
+        } catch (e: AnthropicInvalidDataException) {
+            throw AiException(ODD)
         } catch (e: AnthropicIoException) {
-            throw AiException("Sin conexión. Revisa tu internet.")
+            throw networkError(e)
+        } catch (e: IOException) {
+            throw networkError(e)
         } finally {
             client.close()
         }
@@ -295,6 +328,76 @@ class Ai(private val provider: Provider, private val key: String) {
         /** The saved key was refused by the provider, so Perfil stops calling it "Conectado". */
         @Volatile var keyRejected = false
         private const val CLAUDE_MODEL = "claude-opus-5-5"
+
+        const val SLOW = "La IA tardó demasiado. Intenta otra vez."
+        const val OFFLINE = "Sin conexión. Revisa tu internet."
+        const val ODD = "La IA respondió algo raro. Intenta otra vez."
+
+        /** A key, or the start of one cut by a length limit: the prefix plus 4 or more key characters. */
+        private val KEY = Regex("AIza[0-9A-Za-z_-]{4,}|AQ\\.[0-9A-Za-z_.-]{4,}|sk-ant-[0-9A-Za-z_-]{4,}")
+
+        /** Removes anything that looks like an API key, so provider or exception text can be shown and logged. */
+        fun scrub(s: String): String = s.replace(KEY, "[llave]")
+
+        /** Google explains what went wrong in error.message; show that instead of guessing. Scrubbed before cutting, so a cut key can't leak. */
+        internal fun googleMessage(body: String, code: Int): String =
+            runCatching { JSONObject(body).getJSONObject("error").getString("message") }.getOrNull()
+                ?.let { scrub(it).oneLine(220) }?.ifBlank { null } ?: "error $code"
+
+        /** No network, too slow, or something else on the wire: each gets its own message. */
+        internal fun networkError(e: Throwable): AiException {
+            val chain = generateSequence(e) { it.cause.takeIf { c -> c !== it } }.take(8).toList()
+            return when {
+                chain.any { it is InterruptedIOException } -> AiException(SLOW)
+                chain.any { it is UnknownHostException || it is ConnectException || it is NoRouteToHostException } -> AiException(OFFLINE)
+                else -> AiException("Falló la conexión con la IA. Intenta otra vez.")
+            }
+        }
+
+        /** Anthropic errors other than a bad key or rate limit, in short Spanish with the provider's text scrubbed. */
+        internal fun claudeError(code: Int, message: String): AiException {
+            val detail = scrub(message).oneLine(140).let { if (it.isBlank()) "" else ": $it" }
+            return when {
+                code == 403 -> AiException("Anthropic no dio acceso con esta llave (403)$detail")
+                code >= 500 -> AiException("Claude no respondió ($code). Intenta en un rato.")
+                code == 400 -> AiException("Claude no aceptó la solicitud (400)$detail")
+                else -> AiException("Claude dio un error ($code)$detail")
+            }
+        }
+
+        /** The answers the person already gave, so a retry applies them instead of asking again. */
+        internal fun clarify(clarifications: List<Pair<String, String>>): String = buildString {
+            clarifications.filter { it.second.isNotBlank() }.forEach { (q, a) ->
+                append("Antes preguntaste: «${q.oneLine(200)}» y la persona respondió: «${a.oneLine(300)}». Aplícalo.\n")
+            }
+        }
+
+        /** At most two short, single-line memories per turn: model text is not trusted to stay small. */
+        internal fun remembered(o: JSONObject): List<String> =
+            o.optJSONArray("remember")?.let { a -> (0 until a.length()).map { a.optString(it).oneLine(140) }.filter { it.isNotBlank() } }
+                ?.take(2) ?: emptyList()
+
+        private fun plain(s: String): String =
+            Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase().trim()
+
+        private val SHAPES = mapOf(
+            "mound" to Shape.MOUND, "monton" to Shape.MOUND, "monticulo" to Shape.MOUND,
+            "flat" to Shape.FLAT, "plano" to Shape.FLAT, "plana" to Shape.FLAT, "capa" to Shape.FLAT,
+            "cylinder" to Shape.CYLINDER, "cilindro" to Shape.CYLINDER,
+            "piece" to Shape.PIECE, "pieza" to Shape.PIECE,
+            "liquid" to Shape.LIQUID, "liquido" to Shape.LIQUID,
+        )
+
+        internal fun shapeOf(s: String): Shape? = SHAPES[plain(s)]
+
+        /** A size as a number, or as text like "12 cm" or "3,5"; NaN when there is no number. */
+        internal fun number(j: JSONObject, key: String): Double = when (val v = j.opt(key)) {
+            is Number -> v.toDouble()
+            is String -> Regex("-?\\d+(?:[.,]\\d+)?").find(v)?.value?.replace(',', '.')?.toDoubleOrNull() ?: Double.NaN
+            else -> Double.NaN
+        }
+
+        private fun rulerOf(s: String): String = plain(s).takeIf { it in setOf("mano", "plato", "estimado") } ?: "estimado"
 
         private const val ANALYZE_SYSTEM = """Eres un nutricionista experto en estimar porciones a partir de fotos y descripciones, con dominio de la comida ecuatoriana y latinoamericana. Tu trabajo es estimar con honestidad, no adivinar con falsa precisión.
 
@@ -332,7 +435,7 @@ Responde SOLO con JSON válido, sin markdown:
         private const val MEASURE_SYSTEM = """Eres un experto en medir porciones de comida en fotos, con dominio de la comida ecuatoriana (arroz, menestra, verde, maduro, bolón, patacón, seco, encebollado, ceviche, locro, mote, yuca, tigrillo). NO estimas gramos: mides centímetros. Los gramos los calcula después un programa con la geometría y una tabla de densidades, así que tu trabajo es medir bien.
 
 Método:
-1. Lee la REGLA DE ESCALA. Si es la mano de la persona, localízala en la foto y usa sus medidas reales (ancho de palma, largo del dedo medio, ancho del pulgar) como regla. Si es el plato, usa su diámetro real. Si es la distancia de la cámara, usa el ancho real que cubre la imagen.
+1. Lee la REGLA DE ESCALA. Si la mano aparece en la foto, úsala como regla principal con sus medidas reales (ancho de palma, largo del dedo medio, ancho del pulgar). Si no aparece, usa el plato (su diámetro real si te lo dan) y dilo en reference. Si no hay mano ni plato claros, estima con lo que se vea (cubiertos, distancia de la cámara) y pon ruler "estimado". No inventes una mano que no está en la foto.
 2. Separa cada componente del plato (incluye salsas, aceite visible, curtido, bebidas, acompañantes).
 3. Para cada uno elige la forma:
    - MOUND: montón (arroz, menestra, puré, majado). length y width = la huella sobre el plato; height = lo más alto del montón.
@@ -347,6 +450,7 @@ Método:
 
 Responde SOLO con JSON válido, sin texto extra ni markdown, con esta forma exacta:
 {"items":[{"name":"nombre corto en español","shape":"MOUND|FLAT|CYLINDER|PIECE|LIQUID","length":0,"width":0,"height":0,"fill":null,"densityKey":"clave o null","per100":{"kcal":0,"protein":0,"carbs":0,"fat":0,"fiber":0}}],
+ "ruler":"mano|plato|estimado",
  "reference":"qué usaste como regla y cuánto mide en la foto, en una frase",
  "confidence":"alta|media|baja",
  "question":"UNA pregunta corta solo si algo que la foto no puede mostrar cambia las calorías en más de ~15% (¿frito o a la plancha?, ¿la bebida tiene azúcar?); si la foto basta, vacío",
@@ -361,14 +465,14 @@ Si la imagen no contiene comida, devuelve items vacío y explícalo en verdict."
             if (start < 0 || end <= start) throw AiException("No entendí la respuesta de la IA. Intenta otra vez.")
             val o = try { JSONObject(raw.substring(start, end + 1)) } catch (e: Exception) { throw AiException("La IA respondió algo raro. Intenta otra vez.") }
             val items = o.optJSONArray("items").objects().mapNotNull { j ->
-                val shape = runCatching { Shape.valueOf(j.optString("shape").uppercase()) }.getOrNull() ?: return@mapNotNull null
+                val shape = shapeOf(j.optString("shape")) ?: return@mapNotNull null
                 val p = j.optJSONObject("per100") ?: return@mapNotNull null
                 val m = Measured(
-                    name = j.optString("name").ifBlank { return@mapNotNull null },
+                    name = j.optString("name").oneLine(60).ifBlank { return@mapNotNull null },
                     shape = shape,
-                    lengthCm = j.optDouble("length", 0.0),
-                    widthCm = j.optDouble("width", 0.0),
-                    heightCm = j.optDouble("height", 0.0),
+                    lengthCm = number(j, "length"),
+                    widthCm = number(j, "width"),
+                    heightCm = number(j, "height"),
                     per100 = Per100(p.optDouble("kcal", 0.0), p.optDouble("protein", 0.0), p.optDouble("carbs", 0.0), p.optDouble("fat", 0.0), p.optDouble("fiber", 0.0)),
                     densityKey = j.optString("densityKey").takeIf { it.isNotBlank() && it != "null" },
                     fill = if (j.isNull("fill")) null else j.optDouble("fill").takeIf { !it.isNaN() },
@@ -383,6 +487,7 @@ Si la imagen no contiene comida, devuelve items vacío y explícalo en verdict."
                 verdict = o.optString("verdict"),
                 better = o.optString("better"),
                 question = o.optString("question"),
+                ruler = rulerOf(o.optString("ruler")),
             )
         }
 

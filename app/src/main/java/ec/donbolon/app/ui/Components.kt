@@ -33,6 +33,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -44,6 +45,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.Dp
@@ -74,10 +77,13 @@ fun Label(text: String, modifier: Modifier = Modifier) {
 fun Chip(text: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Box(
         modifier
+            // 48dp of touch around a pill that still looks small.
+            .minimumInteractiveComponentSize()
             .clip(CircleShape)
             .background(if (selected) C.accent else C.raised)
             .clickable(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center,
     ) {
         Text(text, color = if (selected) C.onAccent else C.text, fontSize = 13.sp, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
     }
@@ -99,9 +105,14 @@ fun QuietButton(text: String, modifier: Modifier = Modifier, color: Color = C.ac
 }
 
 @Composable
-fun Field(value: String, onChange: (String) -> Unit, label: String, modifier: Modifier = Modifier, number: Boolean = false, singleLine: Boolean = true, minLines: Int = 1) {
+fun Field(
+    value: String, onChange: (String) -> Unit, label: String, modifier: Modifier = Modifier, number: Boolean = false,
+    singleLine: Boolean = true, minLines: Int = 1, placeholder: String? = null,
+) {
+    // Keep [label] to a word or two; a longer example goes in [placeholder] so it never wraps.
     OutlinedTextField(
-        value, onChange, modifier.fillMaxWidth(), label = { Text(label) }, singleLine = singleLine, minLines = minLines,
+        value, onChange, modifier.fillMaxWidth(), label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) }, singleLine = singleLine, minLines = minLines,
+        placeholder = placeholder?.let { { Text(it, color = C.faint, maxLines = 1) } },
         shape = RoundedCornerShape(14.dp),
         keyboardOptions = if (number) KeyboardOptions(keyboardType = KeyboardType.Decimal) else KeyboardOptions.Default,
         colors = OutlinedTextFieldDefaults.colors(
@@ -130,7 +141,11 @@ fun CalorieRing(eaten: Double, target: Int, size: Dp = 180.dp) {
                 "${kotlin.math.abs(left).roundToInt()}",
                 style = MaterialTheme.typography.displaySmall, color = if (over) C.over else if (left < 0) C.good else C.text,
             )
-            Text(if (left >= 0) "kcal restantes" else if (over) "kcal de más" else "sobre la meta, en rango ✓", color = C.muted, fontSize = 13.sp)
+            Text(
+                if (left >= 0) "kcal restantes" else if (over) "kcal de más" else "sobre la meta, en rango ✓",
+                color = C.muted, fontSize = 13.sp, textAlign = TextAlign.Center, maxLines = 2,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
             Spacer(Modifier.height(4.dp))
             Text("${eaten.roundToInt()} / $target", color = C.faint, fontSize = 12.sp)
         }
@@ -176,11 +191,15 @@ fun Stepper(onMinus: () -> Unit, onPlus: () -> Unit, content: @Composable () -> 
 
 @Composable
 fun RoundTap(text: String, onClick: () -> Unit) {
+    // Drawn at 30dp, touched at 48dp.
     Box(
-        Modifier.size(30.dp).clip(CircleShape).border(1.dp, C.line, CircleShape).clickable(onClick = onClick),
+        Modifier.minimumInteractiveComponentSize().size(30.dp).clip(CircleShape).border(1.dp, C.line, CircleShape).clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { Text(text, color = C.text, fontSize = 16.sp) }
 }
+
+/** "1 día", "3 días": Spanish nouns that follow a count. */
+fun plural(n: Int, singular: String, plural: String) = "$n ${if (n == 1) singular else plural}"
 
 @Composable
 fun Gap(h: Dp = 12.dp) = Spacer(Modifier.height(h))
@@ -214,10 +233,43 @@ object Images {
         Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, m, true)
     }.getOrNull()
 
+    /** Meal thumbnails are part of the diary, so they are sealed with the same [Vault] key. */
     fun saveThumb(b: Bitmap, file: File) {
         val s = min(1f, 640f / max(b.width, b.height))
         val t = Bitmap.createScaledBitmap(b, (b.width * s).toInt(), (b.height * s).toInt(), true)
-        FileOutputStream(file).use { t.compress(Bitmap.CompressFormat.JPEG, 82, it) }
+        val jpeg = java.io.ByteArrayOutputStream().also { t.compress(Bitmap.CompressFormat.JPEG, 82, it) }.toByteArray()
+        writeAtomically(file, ec.donbolon.app.data.Vault.seal(jpeg))
+    }
+
+    /** Opens a sealed thumbnail; a plain JPEG from older versions is read too and sealed on the spot. */
+    fun loadThumb(file: File): Bitmap? = runCatching {
+        if (!file.exists()) return null
+        val thumb = unseal(file.readBytes(), ec.donbolon.app.data.Vault::open) ?: return null
+        if (thumb.legacy) runCatching { writeAtomically(file, ec.donbolon.app.data.Vault.seal(thumb.jpeg)) }
+        BitmapFactory.decodeByteArray(thumb.jpeg, 0, thumb.jpeg.size)
+    }.getOrNull()
+
+    class Thumb(val jpeg: ByteArray, val legacy: Boolean)
+
+    /**
+     * The decision behind [loadThumb], kept free of Android so it can be tested: sealed bytes are
+     * opened; if that fails, bytes that start like a JPEG are a legacy plain thumbnail; else nothing.
+     */
+    fun unseal(raw: ByteArray, open: (ByteArray) -> ByteArray): Thumb? {
+        runCatching { open(raw) }.getOrNull()?.let { return Thumb(it, legacy = false) }
+        val jpeg = raw.size > 3 && raw[0] == 0xFF.toByte() && raw[1] == 0xD8.toByte() && raw[2] == 0xFF.toByte()
+        return if (jpeg) Thumb(raw, legacy = true) else null
+    }
+
+    /** The camera writes full-size originals to cacheDir/camera; they are only needed until loaded. */
+    fun clearCamera(context: Context) {
+        File(context.cacheDir, "camera").listFiles()?.forEach { it.delete() }
+    }
+
+    private fun writeAtomically(file: File, bytes: ByteArray) {
+        val tmp = File(file.path + ".tmp")
+        tmp.writeBytes(bytes)
+        if (!tmp.renameTo(file)) { file.delete(); tmp.renameTo(file) }
     }
 }
 

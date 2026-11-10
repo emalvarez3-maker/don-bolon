@@ -148,13 +148,13 @@ fun localReply(text: String, s: AppState, t: Targets): String {
     val q = text.lowercase()
     return when {
         "antojo" in q || "dulce" in q || "ansiedad" in q ->
-            "Grrr, los antojos suben y bajan como olas. Ve a Mente → SOS y aguanta 3 minutos conmigo. Si después sigue ahí, cómelo servido en plato, sentado y sin culpa: una porción, no la bolsa."
+            "Grrr, los antojos suben y bajan como olas. Toca «Tengo un antojo» aquí abajo y aguanta 3 minutos conmigo. Si después sigue ahí, cómelo servido en plato, sentado y sin culpa: una porción, no la bolsa."
         "pasé" in q || "pase" in q || "culpa" in q ->
             "Una comida no arruina nada. Lo que arruina es el \"ya qué más da\". Hoy comes normal: nada de compensar con hambre ni castigo. Proteína, verduras y a seguir registrando."
         "semana" in q -> {
             val days = (1..7).map { s.totalsOn(LocalDate.now().minusDays(it.toLong())).kcal }.filter { it > 0 }
             if (days.isEmpty()) "No tengo datos de la semana. Registra y luego hablamos."
-            else "Promedio ${days.average().fmt()} kcal en ${days.size} días registrados (meta ${t.kcal}). ${if (days.average() <= t.kcal * 1.1) "Hmpf, vas bien." else "Te estás pasando; mira qué comida se repite."}"
+            else "Promedio ${days.average().fmt()} kcal en ${plural(days.size, "día registrado", "días registrados")} (meta ${t.kcal}). ${if (days.average() <= t.kcal * 1.1) "Hmpf, vas bien." else "Te estás pasando; mira qué comida se repite."}"
         }
         else -> {
             val ideas = FoodDb.all.filter { it.protein >= 9 && it.kcal * it.portionG / 100 <= left.coerceAtLeast(150.0) }

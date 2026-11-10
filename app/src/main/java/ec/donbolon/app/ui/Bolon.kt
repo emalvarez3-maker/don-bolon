@@ -12,7 +12,7 @@ import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import kotlin.math.abs
@@ -76,7 +76,7 @@ enum class Reaction(val line: String) {
  * Don Bolón: a bolón de queso just out of the pan, drawn by hand on a 200×200 grid.
  * He breathes (the dough squashes), blinks, wobbles a cheese drip and frowns or smiles with
  * his mood. When [onPoke] is set he is interactive: a tap gets a reaction (growl, hop, laugh,
- * chew), stroking him makes him happy, dragging squishes the dough while his eyes follow the
+ * chew), stroking him makes him happy, dragging sideways squishes the dough while his eyes follow the
  * finger, and a long press calls [onLongPress]. [talking] animates the mouth.
  */
 @Composable
@@ -169,7 +169,8 @@ fun Bolon(
             )
         }
         .pointerInput(Unit) {
-            detectDragGestures(
+            // Only sideways strokes squish him: a vertical swipe that starts on him scrolls the page.
+            detectHorizontalDragGestures(
                 onDragStart = { finger = it; stroke = 0f },
                 onDragEnd = {
                     finger = null
@@ -180,11 +181,11 @@ fun Bolon(
                 },
                 onDragCancel = { finger = null; scope.launch { squishX.snapTo(0f); squishY.snapTo(0f) } },
             ) { change, drag ->
+                change.consume()
                 finger = change.position
-                stroke += drag.getDistance()
+                stroke += abs(drag)
                 val w = this.size.width.toFloat()
-                scope.launch { squishX.snapTo((squishX.value + drag.x / w).coerceIn(-0.25f, 0.25f)) }
-                scope.launch { squishY.snapTo((squishY.value + drag.y / w).coerceIn(-0.2f, 0.2f)) }
+                scope.launch { squishX.snapTo((squishX.value + drag / w).coerceIn(-0.25f, 0.25f)) }
             }
         }
 

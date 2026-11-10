@@ -55,11 +55,28 @@ object Memory {
         return if (fresh.isEmpty()) s else s.copy(memories = (s.memories + fresh).takeLast(MAX_NOTES))
     }
 
-    /** Compares what the AI estimated with what was saved, and keeps every real portion fix. */
-    fun corrections(ai: List<FoodItem>, saved: List<FoodItem>): List<Correction> = ai.mapNotNull { a ->
-        val s = saved.firstOrNull { norm(it.name) == norm(a.name) } ?: return@mapNotNull null
-        if (a.grams <= 0 || abs(s.grams - a.grams) / a.grams < 0.12) null
-        else Correction(a.name, a.grams, s.grams, System.currentTimeMillis())
+    /**
+     * Compares what the AI estimated with what was saved, and keeps every real portion fix.
+     * When both lists line up name by name they are compared position by position. Otherwise
+     * (an item was removed or added) each AI item is paired with at most one saved item of the
+     * same name, closest grams first, so two "presa de pollo" of 120 g and 80 g saved unchanged
+     * never read as a fix of one into the other.
+     */
+    fun corrections(ai: List<FoodItem>, saved: List<FoodItem>): List<Correction> {
+        val aligned = ai.size == saved.size && ai.indices.all { norm(ai[it].name) == norm(saved[it].name) }
+        val pairs: List<Pair<FoodItem, FoodItem>> = if (aligned) ai.zip(saved) else {
+            val candidates = ai.indices.flatMap { i -> saved.indices.filter { j -> norm(ai[i].name) == norm(saved[j].name) }.map { j -> i to j } }
+                .sortedWith(compareBy({ abs(ai[it.first].grams - saved[it.second].grams) }, { it.first }, { it.second }))
+            val usedAi = mutableSetOf<Int>()
+            val usedSaved = mutableSetOf<Int>()
+            candidates.filter { (i, j) -> i !in usedAi && j !in usedSaved && usedAi.add(i) && usedSaved.add(j) }
+                .sortedBy { it.first }.map { (i, j) -> ai[i] to saved[j] }
+        }
+        val now = System.currentTimeMillis()
+        return pairs.mapNotNull { (a, s) ->
+            if (a.grams <= 0 || abs(s.grams - a.grams) / a.grams < 0.12) null
+            else Correction(a.name, a.grams, s.grams, now)
+        }
     }
 
     /** The foods eaten most in the last 60 days with the usual portion. */

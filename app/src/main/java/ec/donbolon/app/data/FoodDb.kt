@@ -17,6 +17,11 @@ data class FoodRef(
     val fat: Double,
     val fiber: Double,
     val aliases: List<String> = emptyList(),
+    /**
+     * How many of the things the user counts make up [portion]: "3 patacones" is 3, "1/2 aguacate"
+     * is 0.5. A count in a description is of those units, so "3 patacones" is one portion.
+     */
+    val unitsPerPortion: Double = 1.0,
 ) {
     fun item(grams: Double = portionG) = FoodItem(
         name, grams, kcal * grams / 100, protein * grams / 100, carbs * grams / 100, fat * grams / 100, fiber * grams / 100,
@@ -30,15 +35,15 @@ object FoodDb {
         FoodRef("Bolón de verde (airfryer)", 170.0, "1 bolón", 190.0, 4.5, 34.0, 4.5, 2.4, listOf("bolon airfryer", "bolon horno")),
         FoodRef("Encebollado", 450.0, "1 plato", 75.0, 7.0, 7.0, 2.0, 0.8, listOf("encebollado")),
         FoodRef("Chifles", 30.0, "1 puñado", 520.0, 2.3, 58.0, 31.0, 3.5, listOf("chifle", "chifles")),
-        FoodRef("Patacones", 100.0, "3 patacones", 310.0, 1.5, 48.0, 13.0, 3.0, listOf("patacon", "patacones", "tostones")),
-        FoodRef("Maduro frito", 100.0, "1/2 maduro", 250.0, 1.5, 46.0, 8.0, 2.5, listOf("maduro")),
+        FoodRef("Patacones", 100.0, "3 patacones", 310.0, 1.5, 48.0, 13.0, 3.0, listOf("patacon", "patacones", "tostones"), 3.0),
+        FoodRef("Maduro frito", 100.0, "1/2 maduro", 250.0, 1.5, 46.0, 8.0, 2.5, listOf("maduro"), 0.5),
         FoodRef("Arroz blanco cocido", 180.0, "1 taza", 130.0, 2.7, 28.0, 0.3, 0.4, listOf("arroz")),
         FoodRef("Arroz con menestra", 350.0, "1 plato", 150.0, 5.5, 26.0, 2.5, 4.0, listOf("menestra", "arroz con menestra")),
         FoodRef("Seco de pollo", 400.0, "1 plato con arroz", 140.0, 9.0, 16.0, 4.5, 1.0, listOf("seco de pollo", "seco")),
         FoodRef("Ceviche de camarón", 300.0, "1 plato", 70.0, 9.0, 6.0, 1.0, 1.0, listOf("ceviche")),
         FoodRef("Hornado", 200.0, "1 porción de carne", 290.0, 25.0, 0.0, 21.0, 0.0, listOf("hornado", "cerdo horneado")),
         FoodRef("Fritada", 200.0, "1 porción", 330.0, 24.0, 0.0, 26.0, 0.0, listOf("fritada")),
-        FoodRef("Llapingachos", 150.0, "2 llapingachos", 210.0, 5.0, 25.0, 10.0, 2.0, listOf("llapingacho")),
+        FoodRef("Llapingachos", 150.0, "2 llapingachos", 210.0, 5.0, 25.0, 10.0, 2.0, listOf("llapingacho", "llapingachos"), 2.0),
         FoodRef("Mote", 150.0, "1 taza", 120.0, 3.0, 25.0, 1.0, 3.0, listOf("mote")),
         FoodRef("Tortilla de verde", 120.0, "1 tortilla", 230.0, 4.0, 30.0, 10.0, 2.0, listOf("tortilla de verde")),
         FoodRef("Humita", 150.0, "1 humita", 190.0, 5.0, 26.0, 8.0, 2.5, listOf("humita")),
@@ -68,7 +73,7 @@ object FoodDb {
         FoodRef("Camarón cocido", 120.0, "1 porción", 99.0, 24.0, 0.2, 0.3, 0.0, listOf("camaron", "camarones")),
         FoodRef("Huevo", 50.0, "1 huevo", 143.0, 12.6, 0.7, 9.5, 0.0, listOf("huevo", "huevos", "huevo cocinado", "huevo duro")),
         FoodRef("Huevo frito", 55.0, "1 huevo", 196.0, 13.6, 0.8, 15.0, 0.0, listOf("huevo frito", "huevos fritos")),
-        FoodRef("Claras de huevo", 100.0, "3 claras", 52.0, 11.0, 0.7, 0.2, 0.0, listOf("clara", "claras")),
+        FoodRef("Claras de huevo", 100.0, "3 claras", 52.0, 11.0, 0.7, 0.2, 0.0, listOf("clara", "claras"), 3.0),
         FoodRef("Queso fresco", 40.0, "1 tajada", 260.0, 18.0, 3.0, 20.0, 0.0, listOf("queso")),
         FoodRef("Yogur griego natural", 170.0, "1 vaso", 73.0, 10.0, 3.9, 1.9, 0.0, listOf("yogur griego", "yogurt griego")),
         FoodRef("Yogur con sabor", 200.0, "1 vaso", 95.0, 3.5, 16.0, 2.0, 0.0, listOf("yogur", "yogurt")),
@@ -96,7 +101,7 @@ object FoodDb {
         FoodRef("Mango", 165.0, "1 taza", 60.0, 0.8, 15.0, 0.4, 1.6, listOf("mango")),
         FoodRef("Naranja", 150.0, "1 naranja", 47.0, 0.9, 12.0, 0.1, 2.4, listOf("naranja", "mandarina")),
         FoodRef("Frutillas", 150.0, "1 taza", 32.0, 0.7, 7.7, 0.3, 2.0, listOf("frutilla", "fresa")),
-        FoodRef("Aguacate", 70.0, "1/2 aguacate", 160.0, 2.0, 8.5, 14.7, 6.7, listOf("aguacate", "palta")),
+        FoodRef("Aguacate", 70.0, "1/2 aguacate", 160.0, 2.0, 8.5, 14.7, 6.7, listOf("aguacate", "palta"), 0.5),
         FoodRef("Ensalada verde", 150.0, "1 plato", 20.0, 1.3, 3.5, 0.2, 1.8, listOf("ensalada", "lechuga")),
         FoodRef("Brócoli", 150.0, "1 taza", 35.0, 2.4, 7.2, 0.4, 3.3, listOf("brocoli")),
         FoodRef("Tomate", 120.0, "1 tomate", 18.0, 0.9, 3.9, 0.2, 1.2, listOf("tomate")),
@@ -106,7 +111,7 @@ object FoodDb {
         FoodRef("Mantequilla de maní", 32.0, "2 cucharadas", 588.0, 25.0, 20.0, 50.0, 6.0, listOf("mani", "mantequilla de mani")),
         FoodRef("Maní / nueces", 30.0, "1 puñado", 600.0, 22.0, 18.0, 50.0, 8.0, listOf("nueces", "almendras", "mani tostado")),
         FoodRef("Chocolate", 40.0, "1 barra pequeña", 540.0, 6.0, 58.0, 31.0, 4.0, listOf("chocolate")),
-        FoodRef("Galletas", 30.0, "4 galletas", 480.0, 6.0, 68.0, 20.0, 2.0, listOf("galleta", "galletas")),
+        FoodRef("Galletas", 30.0, "4 galletas", 480.0, 6.0, 68.0, 20.0, 2.0, listOf("galleta", "galletas"), 4.0),
         FoodRef("Helado", 100.0, "1 bola grande", 207.0, 3.5, 24.0, 11.0, 0.7, listOf("helado")),
         FoodRef("Pizza", 110.0, "1 porción", 266.0, 11.0, 33.0, 10.0, 2.3, listOf("pizza")),
         FoodRef("Hamburguesa", 220.0, "1 hamburguesa", 250.0, 13.0, 24.0, 11.0, 1.5, listOf("hamburguesa")),
@@ -146,8 +151,9 @@ object FoodDb {
                 val at = Regex("\\b${Regex.escape(alias)}\\b").find(rest)!!.range
                 val before = rest.substring(0, at.first).trim().split(" ").takeLast(3)
                 val grams = Regex("(\\d+)\\s*(g|gr|gramos)( de)?$").find(before.joinToString(" "))?.groupValues?.get(1)?.toDoubleOrNull()
-                val count = before.lastOrNull()?.let { it.replace(",", ".").toDoubleOrNull() ?: words[it] } ?: 1.0
-                found += food.item(grams ?: food.portionG * count)
+                // A bare food name means one portion; a number counts units ("3 patacones" = 1 portion).
+                val count = before.lastOrNull()?.let { it.replace(",", ".").toDoubleOrNull() ?: words[it] }
+                found += food.item(grams ?: count?.let { food.portionG * it / food.unitsPerPortion } ?: food.portionG)
                 rest = rest.removeRange(at)
             }
             found

@@ -1,5 +1,6 @@
 package ec.donbolon.app.data
 
+import ec.donbolon.app.ai.oneLine
 import org.json.JSONArray
 import org.json.JSONObject
 import java.time.Instant
@@ -154,7 +155,7 @@ data class FoodItem(
 
     companion object {
         fun from(o: JSONObject) = FoodItem(
-            o.optString("name", "Comida"), o.optDouble("grams", 100.0).orZero(), o.optDouble("kcal", 0.0).orZero(),
+            o.optString("name", "Comida").oneLine(60).ifBlank { "Comida" }, o.optDouble("grams", 100.0).orZero(), o.optDouble("kcal", 0.0).orZero(),
             o.optDouble("protein", 0.0).orZero(), o.optDouble("carbs", 0.0).orZero(), o.optDouble("fat", 0.0).orZero(),
             o.optDouble("fiber", 0.0).orZero(),
         )

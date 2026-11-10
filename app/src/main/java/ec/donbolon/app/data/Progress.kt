@@ -7,8 +7,12 @@ import kotlin.math.roundToInt
 /** One point of a curve: a date and a value (kg, cm or kcal). */
 data class Point(val date: LocalDate, val value: Double)
 
-/** Where the projection says the user lands, and when. */
-data class Projection(val points: List<Point>, val reachesGoal: LocalDate?)
+/**
+ * Where the projection says the user lands, and when. [reached] is true when the smoothed weight
+ * is already at or past the goal in the direction the plan moves (below it while cutting, above it
+ * while bulking): then [reachesGoal] is the start date, not null, so the UI never says "no llegas".
+ */
+data class Projection(val points: List<Point>, val reachesGoal: LocalDate?, val reached: Boolean = false)
 
 /** The week in numbers, compared with the targets. */
 data class WeekStats(val loggedDays: Int, val avgKcal: Double, val inRange: Int, val proteinDays: Int, val trained: Int, val avgWater: Double)
@@ -33,6 +37,17 @@ object Progress {
         val goal = s.profile.goalWeightKg
         var w = currentWeight(s)
         val pts = mutableListOf(Point(from, w))
+        if (goal != null) {
+            // The goal's direction comes from where the journey started (first weigh-in, as in
+            // journeyFor), and the plan must move the same way: a goal of 75 from 80 is passed at 74
+            // while cutting, but a goal of 85 from 80 is not "reached" by a cut.
+            val start = s.weights.minByOrNull { it.date }?.kg ?: s.profile.weightKg
+            val tdee0 = Nutrition.targets(s.profile.copy(weightKg = w)).tdee
+            val cutting = intake < tdee0
+            val passed = if (goal < start) cutting && w <= goal else goal > start && !cutting && w >= goal
+            // Exactly on the goal, or already beyond it in the direction the plan goes: reached today.
+            if (abs(w - goal) < 0.05 || passed) return Projection(pts, from, reached = true)
+        }
         var reached: LocalDate? = null
         val weeks = if (goal == null) 12 else maxWeeks
         for (i in 1..weeks) {
@@ -51,8 +66,17 @@ object Progress {
     }
 
     /**
-     * Estimated fat lost from what was eaten: the energy gap of each logged day, summed and turned
-     * into kg. Days without logs are skipped (unknown), so this only counts what the diary shows.
+     * A day the diary can speak for: at least two meals and at least half the resting metabolism
+     * ([Nutrition.bmr]) logged. A day with only a 600 kcal lunch is a forgotten dinner, not a
+     * 1800 kcal deficit, so it is left out instead of turned into fat "lost".
+     */
+    fun looksComplete(s: AppState, day: LocalDate, weightKg: Double = s.profile.weightKg): Boolean =
+        s.mealsOn(day).size >= 2 && s.totalsOn(day).kcal >= Nutrition.bmr(s.profile.copy(weightKg = weightKg)) * 0.5
+
+    /**
+     * Estimated fat lost from what was eaten: the energy gap of each complete-looking day
+     * ([looksComplete]), summed and turned into kg. Days without logs or only partly logged are
+     * skipped (unknown), so this only counts what the diary can actually show.
      */
     fun fatCurve(s: AppState, days: Int = 60, today: LocalDate = LocalDate.now()): List<Point> {
         var kg = 0.0
@@ -61,6 +85,7 @@ object Progress {
             val day = today.minusDays(d.toLong())
             if (s.mealsOn(day).isEmpty() || day == today) continue // today isn't finished yet
             val w = Nutrition.trend(s.weights.filter { !it.date.isAfter(day) }).lastOrNull()?.second ?: s.profile.weightKg
+            if (!looksComplete(s, day, w)) continue
             val tdee = Nutrition.targets(s.profile.copy(weightKg = w)).tdee
             kg += (tdee - s.totalsOn(day).kcal) / KCAL_PER_KG
             out += Point(day, kg)

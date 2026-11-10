@@ -11,15 +11,15 @@ import java.time.ZoneId
 import kotlin.math.abs
 
 class NutritionTest {
-    private val esteban = Profile(sex = Sex.HOMBRE, age = 25, heightCm = 172.0, weightKg = 80.0, activity = Activity.LIGERO, goal = Goal.DEFINIR)
+    private val sample = Profile(sex = Sex.HOMBRE, age = 25, heightCm = 172.0, weightKg = 80.0, activity = Activity.LIGERO, goal = Goal.DEFINIR)
 
     @Test fun mifflinStJeorMatchesTheFormula() {
         // 10·80 + 6.25·172 − 5·25 + 5 = 1755
-        assertEquals(1755.0, Nutrition.bmr(esteban), 0.01)
+        assertEquals(1755.0, Nutrition.bmr(sample), 0.01)
     }
 
     @Test fun absPresetIsASmallDeficitWithHighProtein() {
-        val t = Nutrition.targets(esteban)
+        val t = Nutrition.targets(sample)
         assertTrue("deficit", t.kcal < t.tdee)
         val pct = (t.tdee - t.kcal).toDouble() / t.tdee
         assertTrue("recomposition deficit is gentle: $pct", pct in 0.08..0.15)
@@ -34,12 +34,12 @@ class NutritionTest {
     }
 
     @Test fun deficitIsCappedAtOnePercentOfBodyWeightPerWeek() {
-        val t = Nutrition.targets(esteban.copy(priorities = Priorities(1.0, 0.0, 0.0, 0.0, 0.0)))
+        val t = Nutrition.targets(sample.copy(priorities = Priorities(1.0, 0.0, 0.0, 0.0, 0.0)))
         assertTrue(-t.weeklyChangeKg <= 80 * 0.01 + 0.01)
     }
 
     @Test fun surplusIsCappedForMuscleGain() {
-        val t = Nutrition.targets(esteban.copy(priorities = Priorities(0.0, 1.0, 0.0, 0.0, 0.0)))
+        val t = Nutrition.targets(sample.copy(priorities = Priorities(0.0, 1.0, 0.0, 0.0, 0.0)))
         assertTrue(t.kcal > t.tdee)
         assertTrue("surplus ≤ 1.5%/month", t.kcal - t.tdee <= 80 * 0.015 * 7700 / 30 + 10)
     }

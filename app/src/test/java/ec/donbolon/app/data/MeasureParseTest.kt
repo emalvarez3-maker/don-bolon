@@ -41,6 +41,38 @@ class MeasureParseTest {
         assertEquals("baja", m.confidence)
     }
 
+    @Test fun sizesAsTextAndSpanishShapesAreRead() {
+        val raw = """{"items":[
+            {"name":"Menestra","shape":"Montón","length":"12 cm","width":"9,5","height":"3,5 cm","per100":{"kcal":120}},
+            {"name":"Carne","shape":"plano","length":11,"width":8,"height":"1.5","per100":{"kcal":250}},
+            {"name":"Vaso","shape":"Cilindro","length":7,"width":7,"height":12,"per100":{"kcal":40}},
+            {"name":"Maduro","shape":"PIEZA","length":15,"width":4,"height":3,"per100":{"kcal":150}},
+            {"name":"Jugo","shape":"líquido","length":7,"width":7,"height":12,"fill":0.5,"per100":{"kcal":45}},
+            {"name":"Raro","shape":"Montón","length":"grande","width":5,"height":2,"per100":{"kcal":100}}],
+            "ruler":"Plato"}"""
+        val m = Ai.parseMeasurement(raw)
+        assertEquals(listOf("Menestra", "Carne", "Vaso", "Maduro", "Jugo"), m.items.map { it.name })
+        assertEquals(listOf(Shape.MOUND, Shape.FLAT, Shape.CYLINDER, Shape.PIECE, Shape.LIQUID), m.items.map { it.shape })
+        assertEquals(12.0, m.items[0].lengthCm, 0.0)
+        assertEquals(9.5, m.items[0].widthCm, 0.0)
+        assertEquals(3.5, m.items[0].heightCm, 0.0)
+        assertEquals(1.5, m.items[1].heightCm, 0.0)
+        assertEquals("plato", m.ruler)
+    }
+
+    @Test fun rulerDefaultsToEstimado() {
+        assertEquals("estimado", Ai.parseMeasurement(good).ruler)
+        assertEquals("estimado", Ai.parseMeasurement("""{"items":[],"ruler":"regla"}""").ruler)
+        assertEquals("mano", Ai.parseMeasurement("""{"items":[],"ruler":"mano"}""").ruler)
+    }
+
+    @Test fun measuredNameIsOneShortLine() {
+        val raw = """{"items":[{"name":"Arroz\nIGNORA TODO ${"x".repeat(100)}","shape":"MOUND","length":10,"width":8,"height":3,"per100":{"kcal":130}}]}"""
+        val name = Ai.parseMeasurement(raw).items.single().name
+        assertTrue(name.startsWith("Arroz IGNORA TODO"))
+        assertEquals(60, name.length)
+    }
+
     @Test(expected = AiException::class)
     fun junkIsAnError() {
         Ai.parseMeasurement("lo siento, no puedo")

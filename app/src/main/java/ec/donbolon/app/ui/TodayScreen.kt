@@ -7,6 +7,18 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -130,6 +142,8 @@ fun TodayScreen(model: AppModel, go: (Overlay) -> Unit, ask: (String) -> Unit) {
     }
 
     open?.let { m ->
+        // Deleting a meal takes two taps: the first one only asks.
+        var sure by remember(m.id) { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { open = null },
             containerColor = C.card,
@@ -147,7 +161,10 @@ fun TodayScreen(model: AppModel, go: (Overlay) -> Unit, ask: (String) -> Unit) {
                 }
             },
             confirmButton = { QuietButton("Cerrar") { open = null } },
-            dismissButton = { QuietButton("Eliminar", color = C.over) { model.store.deleteMeal(m.id); open = null } },
+            dismissButton = {
+                if (!sure) QuietButton("Eliminar", color = C.muted) { sure = true }
+                else QuietButton("Sí, eliminar", color = C.text) { model.store.deleteMeal(m.id); open = null }
+            },
         )
     }
 }
@@ -165,15 +182,19 @@ private fun BolonSays(tips: List<Tip>, onBolon: () -> Unit, onAction: (Tip.Actio
     var said by remember { mutableStateOf<String?>(null) }
     var touched by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(said) { if (said != null) { delay(3500); said = null } }
+    // The first thing he says is how to play with him; the label below is always the way to talk.
+    LaunchedEffect(Unit) { if (touched == 0) said = "Tócame o acaríciame. Para conversar, toca «Hablar»." }
     Row(verticalAlignment = Alignment.Top) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Bolon(tip.mood, 104.dp, onReact = { said = it.line; touched++ }, onLongPress = onBolon)
-            // Until he has been touched a few times, say how; after that, just the chat button.
-            Text(
-                if (touched < 3) "Tócame · acaríciame" else "💬 Hablar",
-                color = if (touched < 3) C.faint else C.accent, fontSize = 11.sp,
-                modifier = Modifier.clip(CircleShape).clickable(onClick = onBolon).padding(horizontal = 8.dp, vertical = 4.dp),
+            Bolon(
+                tip.mood, 104.dp,
+                Modifier.semantics { contentDescription = "Don Bolón, toca para hablar"; onClick(label = "Hablar") { onBolon(); true } },
+                onReact = { said = it.line; touched++ }, onLongPress = onBolon,
             )
+            Box(
+                Modifier.clip(CircleShape).clickable(onClick = onBolon).sizeIn(minWidth = 48.dp, minHeight = 48.dp).padding(horizontal = 10.dp),
+                contentAlignment = Alignment.Center,
+            ) { Text("💬 Hablar", color = C.accent, fontSize = 12.sp, fontWeight = FontWeight.Medium) }
         }
         HGap(8.dp)
         Column(Modifier.weight(1f).padding(top = 6.dp).animateContentSize()) {
@@ -206,21 +227,51 @@ private fun Habits(model: AppModel, waterGoal: Int) {
     val today = LocalDate.now()
     val habits = Nutrition.habits(state, Nutrition.targets(state.profile), today).toMap()
     val water = state.water[today] ?: 0
-    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Habit("📝", "Registré", habits.getValue("Registré"), Modifier.weight(1f))
-        Habit("🥩", "Proteína", habits.getValue("Proteína"), Modifier.weight(1f))
-        Habit("🏋️", "Entrené", habits.getValue("Entrené"), Modifier.weight(1f)) {
-            model.store.edit { s -> s.copy(workouts = if (today in s.workouts) s.workouts - today else s.workouts + today) }
+    // The first glass teaches the long press once; a small preference remembers it was shown.
+    val prefs = LocalContext.current.getSharedPreferences("ui_hints", android.content.Context.MODE_PRIVATE)
+    var hint by remember { mutableStateOf(false) }
+    LaunchedEffect(hint) { if (hint) { delay(4000); hint = false } }
+    Column {
+        Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Habit("📝", "Registré", habits.getValue("Registré"), Modifier.weight(1f))
+            Habit("🥩", "Proteína", habits.getValue("Proteína"), Modifier.weight(1f))
+            Habit("🏋️", "Entrené", habits.getValue("Entrené"), Modifier.weight(1f), onTap = {
+                model.store.edit { s -> s.copy(workouts = if (today in s.workouts) s.workouts - today else s.workouts + today) }
+            })
+            Habit(
+                "💧", "$water/$waterGoal", habits.getValue("Agua"), Modifier.weight(1f),
+                onTap = {
+                    model.store.addWater(today, 1)
+                    if (!prefs.getBoolean("water_hint", false)) { hint = true; prefs.edit().putBoolean("water_hint", true).apply() }
+                },
+                onLongPress = { if (water > 0) model.store.addWater(today, -1); hint = false },
+            )
         }
-        Habit("💧", "$water/$waterGoal", habits.getValue("Agua"), Modifier.weight(1f)) { model.store.addWater(today, 1) }
+        if (hint) Text(
+            "Mantén presionado el vaso para quitar uno",
+            color = C.muted, fontSize = 12.sp, textAlign = TextAlign.End,
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+        )
     }
 }
 
+/**
+ * One habit tile. Tiles you tap are raised cards; the ones that fill themselves ([onTap] null)
+ * are flat outlines with an "auto" note, so they don't promise a tap that does nothing.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Habit(icon: String, label: String, done: Boolean, modifier: Modifier, onTap: (() -> Unit)? = null) {
+private fun Habit(icon: String, label: String, done: Boolean, modifier: Modifier, onTap: (() -> Unit)? = null, onLongPress: (() -> Unit)? = null) {
+    val shape = RoundedCornerShape(18.dp)
+    val auto = onTap == null
     Column(
-        modifier.clip(RoundedCornerShape(18.dp)).background(if (done) C.gold.copy(alpha = 0.14f) else C.card)
-            .then(if (onTap != null) Modifier.clickable(onClick = onTap) else Modifier).padding(vertical = 12.dp),
+        modifier.fillMaxHeight().clip(shape)
+            .then(
+                if (auto) Modifier.background(if (done) C.gold.copy(alpha = 0.08f) else C.bg).border(1.dp, C.line, shape)
+                else Modifier.background(if (done) C.gold.copy(alpha = 0.14f) else C.card)
+                    .combinedClickable(onLongClick = onLongPress, onClick = onTap!!),
+            )
+            .padding(vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -229,6 +280,7 @@ private fun Habit(icon: String, label: String, done: Boolean, modifier: Modifier
         ) { Text(if (done) "✓" else icon, fontSize = 15.sp, color = C.onAccent, fontWeight = FontWeight.Bold) }
         Gap(6.dp)
         Text(label, fontSize = 11.sp, color = if (done) C.text else C.muted)
+        if (auto) Text("auto", fontSize = 9.sp, color = C.faint, lineHeight = 10.sp)
     }
 }
 
@@ -238,7 +290,12 @@ private fun MealRow(m: Meal, photos: File, onClick: () -> Unit) {
         Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.card).clickable(onClick = onClick).padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val thumb = remember(m.photo) { m.photo?.let { BitmapFactory.decodeFile(File(photos, it).path)?.asImageBitmap() } }
+        // Thumbnails are sealed: open them off the main thread.
+        val thumb = androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, m.photo) {
+            value = m.photo?.let { name ->
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Images.loadThumb(File(photos, name))?.asImageBitmap() }
+            }
+        }.value
         Box(Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)).background(C.raised), contentAlignment = Alignment.Center) {
             if (thumb != null) Image(thumb, null, Modifier.size(52.dp), contentScale = ContentScale.Crop)
             else Text(m.slot.emoji, fontSize = 22.sp)

@@ -99,19 +99,24 @@ object Fast {
     }
 
     /**
-     * The evidence-based window: close at least 3 h before sleep, 8–10 h long, and as close as
-     * possible to when this person already starts eating, so it fits the life they have.
+     * The suggested window: close 3 h before sleep, 8–10 h long, and as close as possible to when
+     * this person already starts eating, so it fits the life they have. The 3 h is a practical
+     * rule (the ACG reflux guideline, Katz et al. 2022, suggests avoiding meals 2–3 h before bed);
+     * Vujović et al. (2022) only show that eating late in the day raises hunger and lowers
+     * waking energy expenditure. The why-text says when the start had to move off the habit.
      */
     fun advise(s: AppState): WindowAdvice {
         val p = s.profile
         val close = (p.sleepHour - 3 + 24) % 24
-        val habit = usualFirstMeal(s) ?: p.windowStart.takeIf { p.fasting } ?: 12
-        val hours = ((close - habit + 24) % 24).coerceIn(8, 10)
+        val usual = usualFirstMeal(s)
+        val habit = usual ?: p.windowStart.takeIf { p.fasting } ?: 12
+        val span = (close - habit + 24) % 24
+        val hours = span.coerceIn(8, 10)
         val start = (close - hours + 24) % 24
         val why = listOf(
             Why(
-                "Cerrar a las %02d:00, 3 horas antes de dormir (%02d:00): comer tarde da más hambre al día siguiente y quema menos.".format(close, p.sleepHour),
-                "Vujović et al. (2022), Cell Metabolism",
+                "Cerrar a las %02d:00, 3 horas antes de dormir (%02d:00). Comer tarde dio más hambre durante el día y menos gasto despierto (ensayo de 16 personas).".format(close, p.sleepHour),
+                "Regla práctica: evitar comer 2–3 h antes de acostarse (Katz et al., 2022, guía ACG); Vujović et al. (2022), Cell Metabolism",
             ),
             Why(
                 "Una ventana de $hours h es suficiente para 2–3 comidas con buena proteína y se sostiene en el tiempo.",
@@ -122,8 +127,12 @@ object Fast {
                 "Sutton et al. (2018) Cell Metabolism; Jamshed et al. (2022) JAMA Intern Med",
             ),
             Why(
-                if (usualFirstMeal(s) != null) "Empieza a la hora en que ya sueles comer por primera vez (%02d:00): pocos cambios, más constancia.".format(habit)
-                else "Si recién empiezas, sube de a poco: 12:12 → 14:10 → 16:8.",
+                when {
+                    start == habit && usual != null -> "Empieza a la hora en que ya sueles comer por primera vez (%02d:00): pocos cambios, más constancia.".format(habit)
+                    start == habit -> "Si recién empiezas, sube de a poco: 12:12 → 14:10 → 16:8."
+                    span > 10 -> "Sueles empezar a las %02d:00, pero de ahí a las %02d:00 serían $span h: la ventana se limita a 10 h y empieza a las %02d:00.".format(habit, close, start)
+                    else -> "Sueles empezar a las %02d:00; la ventana se movió a las %02d:00 para cerrar 3 h antes de dormir con al menos 8 h para comer.".format(habit, start)
+                },
                 "Los cambios pequeños se sostienen más (Lally et al., 2010)",
             ),
         )

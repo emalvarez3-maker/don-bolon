@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -120,7 +121,7 @@ fun NextMeal(model: AppModel, state: AppState) {
 @Composable
 private fun SmallChip(text: String, primary: Boolean, onClick: () -> Unit) {
     Box(
-        Modifier.clip(RoundedCornerShape(12.dp)).background(if (primary) C.accent else C.raised)
+        Modifier.minimumInteractiveComponentSize().clip(RoundedCornerShape(12.dp)).background(if (primary) C.accent else C.raised)
             .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 8.dp),
     ) { Text(text, color = if (primary) C.onAccent else C.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
 }

@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -44,6 +46,9 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 private val es = Locale.forLanguageTag("es-EC")
+/** Body fat in the bars: a neutral cream, so it reads as information, not as a reward (gold) or a warning. */
+private val FatTone = C.text.copy(alpha = 0.62f)
+
 private val dayMonth = DateTimeFormatter.ofPattern("d MMM", es)
 
 /** Most bars the chart shows; older measurements stay out so each bar keeps a readable width. */
@@ -71,7 +76,7 @@ internal fun compositionLine(points: List<Composition>, today: LocalDate = Local
     val last = points.last()
     if (points.size == 1) {
         val whenText = if (last.date == today) "Hoy" else "El ${shortSpanishDate(last.date)}"
-        return "$whenText: ${last.fatKg.fmt(1)} kg de grasa (${last.fatPct.roundToInt()} %) y ${last.leanKg.fmt(1)} kg magra"
+        return "$whenText: ${last.fatKg.fmt(1)} kg de grasa (${last.fatPct.roundToInt()} %) y ${last.leanKg.fmt(1)} kg de músculo"
     }
     val first = points.first()
     return "Desde el ${shortSpanishDate(first.date)}: ${signedKg(last.fatKg - first.fatKg)} kg de grasa, " +
@@ -80,8 +85,9 @@ internal fun compositionLine(points: List<Composition>, today: LocalDate = Local
 
 /**
  * "Grasa vs. músculo": one stacked bar per waist measurement (at most the last
- * [COMPOSITION_MAX_BARS]), lean mass at the bottom in sage and fat on top in mustard gold, each
- * segment labelled in kg and the date under the bar. Terracotta stays reserved for going over.
+ * [COMPOSITION_MAX_BARS]), muscle and lean mass at the bottom in sage and fat on top in a neutral
+ * cream, each segment labelled in kg and the date under the bar. Gold stays for rewards and
+ * terracotta for going over. The RFM source sits behind "¿Por qué?".
  */
 @Composable
 fun CompositionChart(points: List<Composition>, modifier: Modifier = Modifier) {
@@ -93,22 +99,21 @@ fun CompositionChart(points: List<Composition>, modifier: Modifier = Modifier) {
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Mide tu cintura para ver cuánto es grasa y cuánto músculo", color = C.muted, fontSize = 13.sp, textAlign = TextAlign.Center)
-                    Gap(6.dp)
-                    Text("Anótala en «Cintura (cm)», en Tu curva.", color = C.faint, fontSize = 12.sp, textAlign = TextAlign.Center)
                 }
             }
             return@Column
         }
 
         val bars = points.takeLast(COMPOSITION_MAX_BARS)
-        compositionLine(bars)?.let { Text(it, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = C.text) }
+        val sentence = compositionLine(bars)
+        sentence?.let { Text(it, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = C.text) }
         Gap(12.dp)
 
         val grow = remember { Animatable(0f) }
         LaunchedEffect(bars) { grow.snapTo(0f); grow.animateTo(1f, tween(900, easing = FastOutSlowInEasing)) }
         val top = bars.maxOf { it.weightKg }.coerceAtLeast(1.0)
 
-        Canvas(Modifier.fillMaxWidth().height(200.dp)) {
+        Canvas(Modifier.fillMaxWidth().height(200.dp).semantics { contentDescription = "Grasa y músculo por medición de cintura. ${sentence.orEmpty()}" }) {
             val g = grow.value
             val labelRoom = 18.dp.toPx()  // dates under the bars
             val headRoom = 18.dp.toPx()   // total weight over the bars
@@ -144,7 +149,7 @@ fun CompositionChart(points: List<Composition>, modifier: Modifier = Modifier) {
                         ),
                     )
                 }
-                drawPath(cap, C.gold)
+                drawPath(cap, FatTone)
                 // A thin dark seam between the two so they read as separate parts.
                 drawLine(C.card, Offset(x0, base - leanH), Offset(x0 + bw, base - leanH), 1.5.dp.toPx())
 
@@ -153,7 +158,7 @@ fun CompositionChart(points: List<Composition>, modifier: Modifier = Modifier) {
                     if (fatH >= minInside) nc.drawText(p.fatKg.fmt(1), cx, fatTop + fatH / 2 + textOffset, inside)
                     if (leanH >= minInside) nc.drawText(p.leanKg.fmt(1), cx, base - leanH / 2 + textOffset, inside)
                     val total = if (fatH >= minInside) "${p.weightKg.fmt(1)} kg" else "${p.fatKg.fmt(1)} grasa"
-                    head.color = (if (fatH >= minInside) C.muted else C.gold).toArgb()
+                    head.color = (if (fatH >= minInside) C.muted else FatTone).toArgb()
                     nc.drawText(total, cx, fatTop - 5.dp.toPx(), head)
                 }
                 date.color = (if (i == bars.lastIndex) C.text else C.faint).toArgb()
@@ -162,13 +167,10 @@ fun CompositionChart(points: List<Composition>, modifier: Modifier = Modifier) {
         }
         Gap(8.dp)
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Swatch(C.gold, "Grasa (kg)")
-            Swatch(C.accent, "Masa magra (kg)")
+            Swatch(FatTone, "Grasa (kg)")
+            Swatch(C.accent, "Músculo y masa magra (kg)")
         }
-        Text(
-            "Estimado con tu cintura y estatura (RFM, Woolcott y Bergman, 2018)",
-            color = C.faint, fontSize = 11.sp, modifier = Modifier.padding(top = 6.dp),
-        )
+        WhyNote("Lo estimo con tu cintura y tu estatura (RFM, Woolcott y Bergman, 2018). Una medición puede fallar por unos puntos: mira la tendencia, no un solo día.")
     }
 }
 
