@@ -87,18 +87,20 @@ class Ai(private val provider: Provider, private val key: String) {
     /**
      * [answer] is the user's reply to the question a previous pass asked, so a second pass can
      * correct the first one instead of starting over. [clarifications] are earlier (question, answer)
-     * pairs the person already answered.
+     * pairs the person already answered. [promptVariant] picks the analysis instructions for the
+     * portion bench ("anchors", "steps"); null is the app's current prompt (see [analyzeSystem]).
      */
     fun analyze(
         photo: Bitmap?, description: String, cooking: String?, context: String, previous: Analysis? = null, answer: String = "",
         dish: String? = null, clarifications: List<Pair<String, String>> = emptyList(),
-        side: Bitmap? = null, ruler: String? = null, samples: Int = 1, model: String? = null,
+        side: Bitmap? = null, ruler: String? = null, samples: Int = 1, model: String? = null, readTimeoutMs: Int? = null,
+        promptVariant: String? = null,
     ): Analysis {
         if (samples > 1) return ensemble(samples) {
             // A higher temperature so the samples actually differ.
-            analyzeOnce(photo, description, cooking, context, previous, answer, dish, clarifications, side, ruler, model, temperature = 0.7)
+            analyzeOnce(photo, description, cooking, context, previous, answer, dish, clarifications, side, ruler, model, temperature = 0.7, readTimeoutMs, promptVariant)
         }
-        return analyzeOnce(photo, description, cooking, context, previous, answer, dish, clarifications, side, ruler, model, temperature = null)
+        return analyzeOnce(photo, description, cooking, context, previous, answer, dish, clarifications, side, ruler, model, temperature = null, readTimeoutMs, promptVariant)
     }
 
     /**
@@ -123,7 +125,7 @@ class Ai(private val provider: Provider, private val key: String) {
     private fun analyzeOnce(
         photo: Bitmap?, description: String, cooking: String?, context: String, previous: Analysis?, answer: String,
         dish: String?, clarifications: List<Pair<String, String>>, side: Bitmap?, ruler: String?,
-        model: String?, temperature: Double?,
+        model: String?, temperature: Double?, readTimeoutMs: Int? = null, promptVariant: String? = null,
     ): Analysis {
         val ask = buildString {
             append("Analiza esta comida y estima sus nutrientes.\n")
@@ -143,9 +145,12 @@ class Ai(private val provider: Provider, private val key: String) {
             if (photo == null) append("No hay foto: estima solo con la descripción y porciones típicas de Ecuador.\n")
             append("\n$context")
         }
+        val system = analyzeSystem(promptVariant)
         val raw = when (provider) {
-            Provider.GEMINI -> gemini(ANALYZE_SYSTEM, listOf(Turn(true, ask, listOfNotNull(photo, side))), json = true, temperature = temperature, first = model)
-            Provider.CLAUDE -> claude(ANALYZE_SYSTEM, listOf(Turn(true, ask, listOfNotNull(photo, side))), effort = BetaOutputConfig.Effort.HIGH)
+            Provider.GEMINI -> gemini(system, listOf(Turn(true, ask, listOfNotNull(photo, side))), json = true, temperature = temperature, first = model,
+                readTimeout = readTimeoutMs ?: 60_000)
+            // [readTimeoutMs] is Gemini-only; Claude keeps its own bounded timeout.
+            Provider.CLAUDE -> claude(system, listOf(Turn(true, ask, listOfNotNull(photo, side))), effort = BetaOutputConfig.Effort.HIGH)
             Provider.NINGUNO -> throw AiException("Sin IA configurada")
         }
         return parseAnalysis(raw)
@@ -329,6 +334,7 @@ class Ai(private val provider: Provider, private val key: String) {
                 val out = parts.objects().joinToString("") { it.optString("text") }
                 if (out.isBlank()) { last = AiException("Gemini no devolvió respuesta."); continue }
                 if (model != first || first == workingModel) workingModel = model
+                lastModel = model
                 keyRejected = false
                 return out
             } catch (e: IOException) {
@@ -395,8 +401,9 @@ class Ai(private val provider: Provider, private val key: String) {
     }
 
     companion object {
-        /** gemini-4-hydrogen is the last fallback: on the free tier with image input since 2026-11-12. */
-        private val GEMINI_MODELS = listOf("gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-4-hydrogen")
+        // gemini-4-hydrogen is not a fallback: on the 2026-11-20 bench it never answered a photo within 60 s (0 of 8),
+        // so waiting for it would only stretch "Analizando" when the others are overloaded.
+        private val GEMINI_MODELS = listOf("gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite")
 
         /** Overloaded or failing server: worth one more try on the same model. */
         private val RETRY_SAME = setOf(500, 502, 503, 504)
@@ -429,6 +436,9 @@ class Ai(private val provider: Provider, private val key: String) {
 
         /** The Gemini model that last answered, remembered for the rest of the session. */
         @Volatile private var workingModel: String? = null
+
+        /** The Gemini model that answered the most recent request (the bench checks a forced model wasn't replaced by a fallback). */
+        @Volatile var lastModel: String? = null
 
         /** The saved key was refused by the provider, so Perfil stops calling it "Conectado". */
         @Volatile var keyRejected = false
@@ -504,7 +514,7 @@ class Ai(private val provider: Provider, private val key: String) {
 
         private fun rulerOf(s: String): String = plain(s).takeIf { it in setOf("mano", "plato", "estimado") } ?: "estimado"
 
-        private const val ANALYZE_SYSTEM = """Eres un nutricionista experto en estimar porciones a partir de fotos y descripciones, con dominio de la comida ecuatoriana y latinoamericana. Tu trabajo es estimar con honestidad, no adivinar con falsa precisión.
+        internal const val ANALYZE_SYSTEM = """Eres un nutricionista experto en estimar porciones a partir de fotos y descripciones, con dominio de la comida ecuatoriana y latinoamericana. Tu trabajo es estimar con honestidad, no adivinar con falsa precisión.
 
 Método:
 1. Identifica cada componente del plato por separado (incluye salsas, aceite, bebidas, acompañantes como chifles o arroz).
@@ -519,6 +529,63 @@ Responde SOLO con JSON válido, sin texto extra ni markdown, con esta forma exac
  "verdict":"1-2 frases de Don Bolón, un bolón de queso gruñón pero cariñoso: comentario honesto del plato en relación con lo que le queda del día. Sin culpa ni vergüenza.",
  "better":"una mejora concreta y realista para la próxima vez (cambio, porción o acompañante), o vacío si el plato está muy bien"}
 Si la imagen no contiene comida, devuelve items vacío y explícalo en verdict."""
+
+        /**
+         * The analysis instructions for a [promptVariant] of [analyze]: null (or an unknown name) is
+         * [ANALYZE_SYSTEM] unchanged; "anchors" adds real portion weights to compare against; "steps"
+         * adds the same weights plus a per-food order (plate fraction and height, cups or pieces, grams).
+         * Both keep the JSON contract, so [parseAnalysis] reads them unchanged.
+         */
+        internal fun analyzeSystem(promptVariant: String?): String = when (promptVariant) {
+            "anchors" -> ANALYZE_SYSTEM + "\n\n" + PORTION_ANCHORS + "\n" + ANCHORS_RULES
+            "steps" -> ANALYZE_SYSTEM + "\n\n" + PORTION_ANCHORS + "\n" + STEPS_RULES
+            else -> ANALYZE_SYSTEM
+        }
+
+        /**
+         * Real household portions, all from USDA FoodData Central (the same cups [ec.donbolon.app.data.Portion]
+         * cites, plus a few piece weights), so the AI compares against weights instead of guessing them:
+         * rice 168878; menestra 2707387; beans 173740; lentils 172421; maduro 168200; boiled verde 168216;
+         * patacón 168199; bolón/majado 2709558; boiled potato 170440 (0.5 cup = 78 g); fries 2709458;
+         * yuca 2709564; mote 2709933; choclo 169999; chicken 172403 (1 cup diced) and 171477 (0.5 breast,
+         * no bone or skin = 86 g); beef 2705824, pork 2705862, tilapia 2706320 (1 cubic inch = 17 g);
+         * fried egg 173423 (1 large = 46 g); scrambled egg 172187; avocado 171705 (1 cup cubes = 150 g,
+         * 1 fruit = 201 g); queso fresco 2705745 (1 cubic inch = 18 g); tomato 170457; onion 170000;
+         * lettuce 169248; chicken soup 2707134; orange juice 169098; white bread 174924 (1 slice = 25–29 g);
+         * cooked pasta 169737 (1 cup spaghetti = 124 g not packed, 151 g packed); boiled broccoli 169967
+         * (0.5 cup = 78 g); baked sweet potato 168483 (1 cup = 200 g, 1 medium = 114 g).
+         * How a cup looks is geometry, not a table: 237 ml as a spherical cap 4 cm high has an 11.4 cm base
+         * (19 % of a 26 cm plate's 531 cm²); 2.5 cm high, a 15.2 cm base (34 %); half a cup 3 cm high, 9.4 cm.
+         */
+        private const val PORTION_ANCHORS = """ANCLAS DE PORCIÓN (pesos reales de USDA FoodData Central; 1 taza = 237 ml):
+- Arroz blanco cocido: 1 taza = 158 g.
+- Menestra de fréjol: 1 taza = 185 g. Fréjol cocido: 1 taza = 177 g. Lenteja cocida: 1 taza = 198 g.
+- Maduro frito: 1 taza en trozos = 169 g.
+- Verde cocido: 1 taza = 137 g. Patacón: 1 taza = 118 g. Bolón o majado de verde: 1 taza = 200 g.
+- Papa cocida: 1 taza = 156 g. Papas fritas: 1 taza = 60 g.
+- Yuca cocida: 1 taza = 160 g.
+- Mote: 1 taza = 170 g. Choclo desgranado: 1 taza = 149 g.
+- Pollo cocido: 1 taza picado = 140 g; media pechuga sin hueso ni piel = 86 g.
+- Carne de res, cerdo o pescado cocidos: un cubo de 2.5 cm de lado = 17 g (≈1 g por cm³: un bistec de 10 × 8 × 1.5 cm ≈ 125 g).
+- Huevo grande frito: 1 unidad = 46 g. Huevo revuelto: 1 taza = 220 g.
+- Aguacate: 1 taza en cubos = 150 g; 1 aguacate entero sin cáscara ni pepa = 201 g.
+- Queso fresco: un cubo de 2.5 cm de lado = 18 g.
+- Ensalada: tomate picado 1 taza = 180 g; cebolla picada 1 taza = 160 g; lechuga picada 1 taza = 72 g.
+- Sopa o caldo: 1 taza = 245 g. Jugo: 1 taza = 248 g.
+- Pan blanco: 1 rebanada = 25 a 29 g.
+- Pasta cocida: 1 taza de espagueti = 124 g suelta, 151 g apretada.
+- Vegetales cocidos o asados: brócoli 1 taza = 156 g; camote horneado 1 taza = 200 g, 1 mediano = 114 g.
+CÓMO SE VE 1 TAZA en un plato llano de 26 cm: un montículo de unos 11 cm de diámetro y 4 cm de alto (≈1/5 del plato), o una capa de unos 15 cm de diámetro y 2.5 cm de alto (≈1/3 del plato). Media taza: un montículo de unos 9 cm de diámetro y 3 cm de alto."""
+
+        private const val ANCHORS_RULES = """Cómo usar las anclas: con la regla de escala, compara cada alimento con el ancla más cercana (cuántas tazas o piezas es) y saca sus gramos de ahí. Las porciones casi siempre se subestiman: no redondees hacia abajo, y si dudas entre dos tamaños, elige el mayor.
+Tu respuesta sigue siendo SOLO el JSON con la forma indicada arriba."""
+
+        private const val STEPS_RULES = """RAZONAMIENTO POR ALIMENTO (hazlo en silencio, no lo escribas): para cada alimento, en este orden, antes de dar sus gramos:
+a) Con la regla de escala, qué fracción del área del plato cubre y qué altura tiene en cm.
+b) Cuántas tazas o piezas es eso, comparándolo con CÓMO SE VE 1 TAZA y con las anclas.
+c) Sus gramos: tazas o piezas × el peso del ancla que corresponde.
+Las porciones casi siempre se subestiman: no redondees hacia abajo.
+Tu respuesta sigue siendo SOLO el JSON con la forma indicada arriba (items, confidence, question, verdict, better), sin el razonamiento ni texto extra."""
 
         private const val MEMORY_RULES = """FORMATO DE RESPUESTA: responde SOLO con JSON válido, sin markdown:
 {"reply":"tu respuesta para la persona","remember":["dato nuevo y duradero sobre la persona"]}

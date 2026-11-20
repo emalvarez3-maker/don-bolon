@@ -161,7 +161,8 @@ private const val FAILED = "Algo falló. Intenta otra vez."
 private const val ANALYSIS_TIMEOUT_MS = 90_000L
 
 // How photo analyses ask the AI: set by the PortionBench result (on the phone), never by hand.
-// Text-only analyses always use one sample and the default model.
+// 2026-11-20, same 37 dishes: one sample 30.5 % kcal error, median of three 30.7 % (and 3× the quota);
+// gemini-4-hydrogen timed out on every photo. Text-only analyses always use one sample and the default model.
 private const val PHOTO_SAMPLES = 1
 private val PHOTO_MODEL: String? = null
 

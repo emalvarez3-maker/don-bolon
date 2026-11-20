@@ -23,6 +23,8 @@ import kotlin.math.abs
  * - `base`: the app's method, [Ai.analyze] once with the scale sentence as `ruler` (the AI guesses grams);
  * - `ens3`: the same with `samples = 3`, keeping the answer with the median kcal;
  * - `strong`: the same as `base` with `model = "gemini-4-hydrogen"` forced first;
+ * - `anchors`: the same as `base` with `promptVariant = "anchors"` (USDA portion weights to compare against);
+ * - `steps`: the same as `base` with `promptVariant = "steps"` (plate fraction and height, then cups, then grams);
  * - `new`: the AI measures centimeters and geometry plus density give the grams (lost on 2026-11-10; kept
  *   for history, not run by default).
  *
@@ -46,6 +48,8 @@ class PortionBench {
         assumeTrue("Ningún modo válido (${METHODS.joinToString()})", modes.isNotEmpty())
         val limit = args.getString("limit", "40").toInt()
         val pause = args.getString("pauseMs", "4000").toLong()
+        // Skip the first N dishes, so a run that died midway can be resumed.
+        val offset = args.getString("offset", "0").toInt()
         val app = InstrumentationRegistry.getInstrumentation().targetContext
         val assets = InstrumentationRegistry.getInstrumentation().context.assets
         val key = Secrets(app).get(Provider.GEMINI)
@@ -57,13 +61,14 @@ class PortionBench {
         val rows = File(out, "rows-${System.currentTimeMillis()}.jsonl")
         val errors = modes.associateWith { mutableListOf<Pair<Double, Double>>() }
 
-        for (i in 0 until minOf(limit, dishes.length())) {
+        for (i in offset until minOf(limit, dishes.length())) {
             val d = dishes.getJSONObject(i)
             val id = d.getString("id")
             val photo = assets.open("bench/$id.png").use { BitmapFactory.decodeStream(it) }
             val realG = d.getDouble("grams")
             val realKcal = d.getDouble("kcal")
             for (method in modes) {
+                val started = System.currentTimeMillis()
                 val (g, kcal) = runCatching {
                     retrying {
                         if (method == "new") {
@@ -73,24 +78,29 @@ class PortionBench {
                             // The same scale sentence the app passes as its ruler, so the comparison matches the app.
                             val a = when (method) {
                                 "ens3" -> ai.analyze(photo, "", null, "", ruler = scale, samples = 3)
-                                "strong" -> ai.analyze(photo, "", null, "", ruler = scale, model = STRONG)
+                                "strong" -> ai.analyze(photo, "", null, "", ruler = scale, model = STRONG, readTimeoutMs = STRONG_TIMEOUT_MS)
+                                "anchors", "steps" -> ai.analyze(photo, "", null, "", ruler = scale, promptVariant = method)
                                 else -> ai.analyze(photo, "", null, "", ruler = scale)
                             }
                             a.items.sumOf { it.grams } to a.items.sumOf { it.kcal }
                         }
                     }
                 }.getOrElse { e ->
-                    Log.w("DonBolonBench", "$method $id failed: ${e.message}")
-                    rows.appendText(JSONObject().put("id", id).put("method", method).put("error", e.message).toString() + "\n")
+                    val ms = System.currentTimeMillis() - started
+                    Log.w("DonBolonBench", "$method $id failed after $ms ms: ${e.message}")
+                    rows.appendText(JSONObject().put("id", id).put("method", method).put("error", e.message).put("ms", ms).toString() + "\n")
                     Thread.sleep(pause)
                     continue
                 }
+                // ms includes the one-minute wait of a retry; model shows whether a fallback answered instead.
+                val ms = System.currentTimeMillis() - started
+                val model = if (method == "new") null else Ai.lastModel
                 errors.getValue(method) += abs(g - realG) to abs(kcal - realKcal) / realKcal
                 rows.appendText(
                     JSONObject().put("id", id).put("method", method).put("grams", g).put("kcal", kcal)
-                        .put("realGrams", realG).put("realKcal", realKcal).toString() + "\n",
+                        .put("realGrams", realG).put("realKcal", realKcal).put("ms", ms).put("model", model).toString() + "\n",
                 )
-                Log.i("DonBolonBench", "$method $id: ${g.toInt()} g vs ${realG.toInt()} g, ${kcal.toInt()} kcal vs ${realKcal.toInt()} kcal")
+                Log.i("DonBolonBench", "$method $id: ${g.toInt()} g vs ${realG.toInt()} g, ${kcal.toInt()} kcal vs ${realKcal.toInt()} kcal, $ms ms, $model")
                 Thread.sleep(pause)
             }
         }
@@ -107,8 +117,10 @@ class PortionBench {
     }
 
     private companion object {
-        val METHODS = listOf("base", "ens3", "strong", "new")
+        val METHODS = listOf("base", "ens3", "strong", "new", "anchors", "steps")
         const val STRONG = "gemini-4-hydrogen"
+        // hydrogen is slow: the app's 60 s analysis timeout cut off every answer on 2026-11-20.
+        const val STRONG_TIMEOUT_MS = 300_000
     }
 
     /** One retry after a minute when Gemini is saturated or out of quota, so a blip doesn't count as an error. */
