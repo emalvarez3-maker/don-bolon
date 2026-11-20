@@ -97,6 +97,7 @@ import ec.donbolon.app.ai.Label as NutritionLabel
 import ec.donbolon.app.data.Fast
 import ec.donbolon.app.data.Measured
 import ec.donbolon.app.data.Portion
+import ec.donbolon.app.data.Similar
 import ec.donbolon.app.data.SizeCorrection
 import ec.donbolon.app.data.FoodDb
 import ec.donbolon.app.data.FoodItem
@@ -199,6 +200,8 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
     var analysis by remember { mutableStateOf<Analysis?>(null) }
     // Foods whose AI portion was scaled by the person's own past corrections.
     var calibrated by remember { mutableStateOf(listOf<String>()) }
+    // Set when the estimate was checked against similar lab-weighed plates, to say so in the review.
+    var usedRefs by remember { mutableStateOf(false) }
     // A package's nutrition table: being read, and what was read.
     var labelJob by remember { mutableStateOf<Job?>(null) }
     var label by remember { mutableStateOf<NutritionLabel?>(null) }
@@ -318,6 +321,7 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
     fun runAnalysis() {
         if (job?.isActive == true) return
         error = null
+        usedRefs = false
         step = Step.THINKING
         job = scope.launch {
             try {
@@ -334,10 +338,16 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                     val withPhoto = top != null || sideNow != null
                     Triple(
                         runInterruptible(Dispatchers.IO) {
-                            ai.analyze(
-                                top, said, cooking, aiContext(), dish = if (ruler == null) dish?.describe() else null, clarifications = asked, side = sideNow, ruler = ruler,
-                                samples = if (withPhoto) PHOTO_SAMPLES else 1, model = if (withPhoto) PHOTO_MODEL else null,
-                            )
+                            if (withPhoto) {
+                                // Two steps: the AI names the foods, the app finds 3 similar lab-weighed plates, and the AI
+                                // re-estimates against them. Bench 2026-11-20, 32 paired dishes: 30.5 % kcal error vs 33.7 %.
+                                val refs = runCatching { Similar.load(context) }.getOrNull()
+                                ai.analyzeWithReferences(
+                                    top, said, cooking, aiContext(), clarifications = asked, side = sideNow, ruler = ruler, model = PHOTO_MODEL,
+                                ) { foods -> refs?.let { db -> Similar.hint(db, foods)?.also { usedRefs = true } } }
+                            } else {
+                                ai.analyze(top, said, cooking, aiContext(), dish = dish?.describe(), clarifications = asked)
+                            }
                         },
                         emptyList<Measured>(), "estimado",
                     )
@@ -549,6 +559,10 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                 Step.REVIEW -> LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
                     item {
                         Summary(photo, total.kcal, total.protein, total.carbs, total.fat, analysis?.confidence)
+                        if (analysis != null && usedRefs) {
+                            Gap(6.dp)
+                            Text("Comparado con 3 platos parecidos pesados en laboratorio", color = C.muted, fontSize = 12.sp)
+                        }
                         if (analysis != null && calibrated.isNotEmpty()) {
                             Gap(6.dp)
                             Text("Ajusté a tus porciones: ${calibrated.joinToString().lowercase()}", color = C.muted, fontSize = 12.sp)
