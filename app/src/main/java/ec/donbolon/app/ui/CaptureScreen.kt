@@ -97,6 +97,7 @@ import ec.donbolon.app.ai.Label as NutritionLabel
 import ec.donbolon.app.data.Fast
 import ec.donbolon.app.data.Measured
 import ec.donbolon.app.data.Portion
+import ec.donbolon.app.data.SizeCorrection
 import ec.donbolon.app.data.FoodDb
 import ec.donbolon.app.data.FoodItem
 import ec.donbolon.app.data.Meal
@@ -345,7 +346,9 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                 val keep = CaptureRules.kept(items.toList(), added.toList())
                 // The person's own past corrections scale the AI's portions; what they see is the baseline
                 // later corrections are measured against, so they never count twice.
-                val cal = Memory.calibrate(result.items, state)
+                // From a photo, plates the AI judges light come out short (bench: 28 of 29), so they are raised first.
+                val fromPhoto = top != null || sideNow != null
+                val cal = Memory.calibrate(if (fromPhoto) SizeCorrection.apply(result.items) else result.items, state)
                 analysis = result.copy(items = cal.items)
                 calibrated = cal.adjusted
                 ruler = used

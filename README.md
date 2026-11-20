@@ -130,6 +130,8 @@ Requires JDK 17 and Android SDK 36.
 
 Kotlin · Jetpack Compose · Material 3 · Android Keystore · BiometricPrompt · Gemini API · Anthropic Java SDK. The character is drawn by hand on a Compose `Canvas`, with no images, and animated in real time.
 
+Reference portions: [Nutrition5k](https://github.com/google-research-datasets/Nutrition5k) (Thames et al., 2021, Google Research), CC BY 4.0. About 4,700 lab-weighed dishes ship with the app as size references for the AI.
+
 ---
 
 <sub>Don Bolón is an educational guide and does not replace a doctor or dietitian. If you have a medical condition, are pregnant, or have a history of eating disorders, please talk to a professional.</sub>

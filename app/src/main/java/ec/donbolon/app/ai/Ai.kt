@@ -59,6 +59,11 @@ data class Analysis(
     val verdict: String,
     val better: String,
     val question: String,
+    /**
+     * A short English name per item ("white rice", "fried egg"), aligned with [items]; "" when the model
+     * left it out. It is what [Ai.analyzeWithReferences] looks up similar weighed dishes by.
+     */
+    val en: List<String> = emptyList(),
 )
 
 /** What [Ai.measure] saw: each food in centimeters, and what it used as a ruler. */
@@ -102,6 +107,28 @@ class Ai(private val provider: Provider, private val key: String) {
         }
         return analyzeOnce(photo, description, cooking, context, previous, answer, dish, clarifications, side, ruler, model, temperature = null, readTimeoutMs, promptVariant)
     }
+
+    /**
+     * Two-step analysis: [analyze] as usual, then [references] gets the foods it recognized as
+     * (English name, or the Spanish one when missing; estimated grams) and may answer with a hint built
+     * from similar lab-weighed dishes. With a hint, a second [analyze] runs with the hint appended to
+     * [ruler] (see [REFERENCE_RULE]); without one, or if that second pass fails, the first answer stands.
+     * The caller supplies [references], so this stays free of Android's Context.
+     */
+    fun analyzeWithReferences(
+        photo: Bitmap?, description: String, cooking: String?, context: String,
+        dish: String? = null, clarifications: List<Pair<String, String>> = emptyList(),
+        side: Bitmap? = null, ruler: String? = null, model: String? = null, readTimeoutMs: Int? = null,
+        promptVariant: String? = null,
+        references: (List<Pair<String, Double>>) -> String?,
+    ): Analysis = withReferences(
+        first = { analyze(photo, description, cooking, context, dish = dish, clarifications = clarifications, side = side, ruler = ruler, model = model, readTimeoutMs = readTimeoutMs, promptVariant = promptVariant) },
+        references = references,
+        second = { hint ->
+            analyze(photo, description, cooking, context, dish = dish, clarifications = clarifications, side = side,
+                ruler = referenceRuler(ruler, hint), model = model, readTimeoutMs = readTimeoutMs, promptVariant = promptVariant)
+        },
+    )
 
     /**
      * [samples] independent requests at once; failures are dropped and the answer whose total kcal is
@@ -523,7 +550,7 @@ Método:
 4. Si la descripción contradice la foto, la descripción manda. Si algo no se ve (aceite, azúcar en bebidas), asume lo típico y dilo.
 
 Responde SOLO con JSON válido, sin texto extra ni markdown, con esta forma exacta:
-{"items":[{"name":"nombre corto en español","grams":0,"kcal":0,"protein":0,"carbs":0,"fat":0,"fiber":0}],
+{"items":[{"name":"nombre corto en español","en":"short English name (e.g. white rice, fried egg)","grams":0,"kcal":0,"protein":0,"carbs":0,"fat":0,"fiber":0}],
  "confidence":"alta|media|baja",
  "question":"UNA pregunta corta solo si algo que la foto no puede mostrar cambia las calorías en más de ~15% (¿frito o a la plancha?, ¿la bebida tiene azúcar?, ¿qué tiene adentro?, ¿cuánto queda en el plato?); si la foto basta, vacío",
  "verdict":"1-2 frases de Don Bolón, un bolón de queso gruñón pero cariñoso: comentario honesto del plato en relación con lo que le queda del día. Sin culpa ni vergüenza.",
@@ -701,17 +728,52 @@ Si la imagen no muestra una tabla nutricional legible, devuelve per100 y perServ
             )
         }
 
+        /** Appended after the hint so the AI calibrates against the weighed dishes instead of copying them. */
+        internal const val REFERENCE_RULE = "Úsalos para calibrar los gramos, sin copiarlos: tu plato puede ser más grande o más chico."
+
+        /** The scale sentence for the second pass: the original [ruler], then the [hint] and [REFERENCE_RULE]. */
+        internal fun referenceRuler(ruler: String?, hint: String): String =
+            listOfNotNull(ruler?.takeIf { it.isNotBlank() }, hint.trim(), REFERENCE_RULE).joinToString(" ")
+
+        /** What the reference lookup gets: (English name, or the Spanish one when missing; grams), grams > 0 only. */
+        internal fun referenceFoods(a: Analysis): List<Pair<String, Double>> =
+            a.items.mapIndexedNotNull { i, item ->
+                val name = a.en.getOrNull(i)?.takeIf { it.isNotBlank() } ?: item.name
+                (name to item.grams).takeIf { item.grams > 0 && name.isNotBlank() }
+            }
+
+        /**
+         * The flow behind [analyzeWithReferences], pure so it can be tested: [first] failing throws; no
+         * foods, no hint, or a failing lookup returns [first]'s answer; [second] failing also falls back to it.
+         */
+        internal fun withReferences(
+            first: () -> Analysis,
+            references: (List<Pair<String, Double>>) -> String?,
+            second: (String) -> Analysis,
+        ): Analysis {
+            val one = first()
+            val foods = referenceFoods(one)
+            if (foods.isEmpty()) return one
+            val hint = runCatching { references(foods) }.getOrNull()?.takeIf { it.isNotBlank() } ?: return one
+            return try { second(hint) } catch (e: Exception) { one }
+        }
+
         fun parseAnalysis(raw: String): Analysis {
             val start = raw.indexOf('{')
             val end = raw.lastIndexOf('}')
             if (start < 0 || end <= start) throw AiException("No entendí la respuesta de la IA. Intenta otra vez.")
             val o = try { JSONObject(raw.substring(start, end + 1)) } catch (e: Exception) { throw AiException("La IA respondió algo raro. Intenta otra vez.") }
+            // Each item keeps its English name beside it, so filtering can't misalign the two lists.
+            val kept = o.optJSONArray("items").objects()
+                .map { j -> FoodItem.from(j) to (if (j.isNull("en")) "" else j.optString("en")).oneLine(60) }
+                .filter { (it, _) -> it.grams > 0 || it.kcal > 0 }
             return Analysis(
-                items = o.optJSONArray("items").objects().map(FoodItem::from).filter { it.grams > 0 || it.kcal > 0 },
+                items = kept.map { it.first },
                 confidence = o.optString("confidence", "media"),
                 verdict = o.optString("verdict"),
                 better = o.optString("better"),
                 question = o.optString("question"),
+                en = kept.map { it.second },
             )
         }
     }
