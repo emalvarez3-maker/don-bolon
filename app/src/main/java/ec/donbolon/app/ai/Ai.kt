@@ -39,6 +39,9 @@ import java.net.URL
 import java.net.UnknownHostException
 import java.text.Normalizer
 import java.time.Duration
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
 
 /** [badKey]: the provider refused the key itself, so the fix is pasting another one, not retrying. */
 class AiException(message: String, val badKey: Boolean = false) : Exception(message)
@@ -70,6 +73,12 @@ data class Measurement(
     val ruler: String = "estimado",
 )
 
+/**
+ * A package's nutrition facts as printed: [per100] per 100 g (or ml), [perServing] per serving of
+ * [servingG] grams. Any of them is null when the label doesn't print it.
+ */
+data class Label(val name: String, val per100: Per100?, val servingG: Double?, val perServing: Per100?)
+
 /** Both providers behind one door. Calls block, so run them off the main thread. */
 class Ai(private val provider: Provider, private val key: String) {
 
@@ -83,7 +92,38 @@ class Ai(private val provider: Provider, private val key: String) {
     fun analyze(
         photo: Bitmap?, description: String, cooking: String?, context: String, previous: Analysis? = null, answer: String = "",
         dish: String? = null, clarifications: List<Pair<String, String>> = emptyList(),
-        side: Bitmap? = null, ruler: String? = null,
+        side: Bitmap? = null, ruler: String? = null, samples: Int = 1, model: String? = null,
+    ): Analysis {
+        if (samples > 1) return ensemble(samples) {
+            // A higher temperature so the samples actually differ.
+            analyzeOnce(photo, description, cooking, context, previous, answer, dish, clarifications, side, ruler, model, temperature = 0.7)
+        }
+        return analyzeOnce(photo, description, cooking, context, previous, answer, dish, clarifications, side, ruler, model, temperature = null)
+    }
+
+    /**
+     * [samples] independent requests at once; failures are dropped and the answer whose total kcal is
+     * the median wins. If every request failed, the last error is thrown.
+     */
+    private fun ensemble(samples: Int, one: () -> Analysis): Analysis {
+        val pool = Executors.newFixedThreadPool(samples)
+        try {
+            val futures = (1..samples).map { pool.submit(Callable { one() }) }
+            var last: Throwable? = null
+            val ok = futures.mapNotNull { f ->
+                try { f.get() } catch (e: ExecutionException) { last = e.cause ?: e; null }
+            }
+            if (ok.isEmpty()) throw last ?: AiException("La IA no respondió.")
+            return medianOf(ok) { a -> a.items.sumOf { it.kcal } }
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    private fun analyzeOnce(
+        photo: Bitmap?, description: String, cooking: String?, context: String, previous: Analysis?, answer: String,
+        dish: String?, clarifications: List<Pair<String, String>>, side: Bitmap?, ruler: String?,
+        model: String?, temperature: Double?,
     ): Analysis {
         val ask = buildString {
             append("Analiza esta comida y estima sus nutrientes.\n")
@@ -104,11 +144,22 @@ class Ai(private val provider: Provider, private val key: String) {
             append("\n$context")
         }
         val raw = when (provider) {
-            Provider.GEMINI -> gemini(ANALYZE_SYSTEM, listOf(Turn(true, ask, listOfNotNull(photo, side))), json = true)
+            Provider.GEMINI -> gemini(ANALYZE_SYSTEM, listOf(Turn(true, ask, listOfNotNull(photo, side))), json = true, temperature = temperature, first = model)
             Provider.CLAUDE -> claude(ANALYZE_SYSTEM, listOf(Turn(true, ask, listOfNotNull(photo, side))), effort = BetaOutputConfig.Effort.HIGH)
             Provider.NINGUNO -> throw AiException("Sin IA configurada")
         }
         return parseAnalysis(raw)
+    }
+
+    /** Reads the nutrition facts table on a package; values that are not printed stay null. */
+    fun readLabel(photo: Bitmap): Label {
+        val ask = "Lee la tabla nutricional de esta etiqueta y devuelve el JSON pedido."
+        val raw = when (provider) {
+            Provider.GEMINI -> gemini(LABEL_SYSTEM, listOf(Turn(true, ask, photo)), json = true)
+            Provider.CLAUDE -> claude(LABEL_SYSTEM, listOf(Turn(true, ask, photo)), effort = BetaOutputConfig.Effort.HIGH)
+            Provider.NINGUNO -> throw AiException("Sin IA configurada")
+        }
+        return parseLabel(raw)
     }
 
     /**
@@ -213,7 +264,14 @@ class Ai(private val provider: Provider, private val key: String) {
         return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
     }
 
-    private fun gemini(system: String, turns: List<Turn>, json: Boolean, readTimeout: Int = 60_000): String {
+    /**
+     * [temperature] overrides the default (0.2 for JSON, 0.8 for chat). [first] is tried before the
+     * usual order and does not become the remembered working model, so forcing one model for a single
+     * call never changes which model the rest of the app uses.
+     */
+    private fun gemini(
+        system: String, turns: List<Turn>, json: Boolean, readTimeout: Int = 60_000, temperature: Double? = null, first: String? = null,
+    ): String {
         val contents = JSONArray(turns.map { t ->
             val parts = JSONArray()
             t.photos.forEach { parts.put(JSONObject().put("inline_data", JSONObject().put("mime_type", "image/jpeg").put("data", jpeg(it)))) }
@@ -224,25 +282,37 @@ class Ai(private val provider: Provider, private val key: String) {
             .put("system_instruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
             .put("contents", contents)
             .put("generationConfig", JSONObject().apply {
-                put("temperature", if (json) 0.2 else 0.8)
+                put("temperature", temperature ?: if (json) 0.2 else 0.8)
                 if (json) put("responseMimeType", "application/json")
             })
             .toString()
         var last: Exception? = null
+        // The final HTTP status of each model tried (-1 for a connection error), to tell the person whether it's the key.
+        val codes = mutableListOf<Int>()
         // The model that answered last time goes first, so a working setup costs one request.
-        for (model in listOfNotNull(workingModel) + GEMINI_MODELS.filter { it != workingModel }) {
+        val order = (listOfNotNull(first, workingModel) + GEMINI_MODELS).distinct()
+        for (model in order) {
             try {
-                val conn = (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection).apply {
-                    requestMethod = "POST"
-                    doOutput = true
-                    connectTimeout = 15_000
-                    this.readTimeout = readTimeout
-                    setRequestProperty("Content-Type", "application/json")
-                    setRequestProperty("x-goog-api-key", key)
+                var code = 0
+                var text = ""
+                var attempt = 0
+                while (true) {
+                    val conn = (URL("https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent").openConnection() as HttpURLConnection).apply {
+                        requestMethod = "POST"
+                        doOutput = true
+                        connectTimeout = 15_000
+                        this.readTimeout = readTimeout
+                        setRequestProperty("Content-Type", "application/json")
+                        setRequestProperty("x-goog-api-key", key)
+                    }
+                    conn.outputStream.use { it.write(body.toByteArray()) }
+                    code = conn.responseCode
+                    text = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.readText().orEmpty()
+                    // An overloaded model often answers a couple of seconds later: one more try before moving on.
+                    if (code in RETRY_SAME && attempt++ == 0) { Thread.sleep(OVERLOAD_WAIT_MS); continue }
+                    break
                 }
-                conn.outputStream.use { it.write(body.toByteArray()) }
-                val code = conn.responseCode
-                val text = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.readText().orEmpty()
+                codes += code
                 when {
                     code == 400 && text.contains("API_KEY_INVALID") -> { keyRejected = true; throw AiException("Google dice que esta llave no es válida. Pega la que usas ahora (la de AI Studio).", badKey = true) }
                     // New "AQ." keys get 401 on some models and work on others, so a 401 is not final until every model said it.
@@ -258,17 +328,19 @@ class Ai(private val provider: Provider, private val key: String) {
                 } catch (e: JSONException) { throw AiException(ODD) }
                 val out = parts.objects().joinToString("") { it.optString("text") }
                 if (out.isBlank()) { last = AiException("Gemini no devolvió respuesta."); continue }
-                workingModel = model
+                if (model != first || first == workingModel) workingModel = model
                 keyRejected = false
                 return out
             } catch (e: IOException) {
                 val err = networkError(e)
                 // A timeout or no network will not get better with another model: answer now instead of hanging for minutes.
                 if (err.message == SLOW || err.message == OFFLINE) throw err
+                codes += -1
                 last = err
             }
         }
         if ((last as? AiException)?.badKey == true) keyRejected = true
+        outcomeMessage(codes)?.let { throw AiException(it) }
         throw last ?: AiException("Gemini no respondió.")
     }
 
@@ -323,7 +395,37 @@ class Ai(private val provider: Provider, private val key: String) {
     }
 
     companion object {
-        private val GEMINI_MODELS = listOf("gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite")
+        /** gemini-4-hydrogen is the last fallback: on the free tier with image input since 2026-11-12. */
+        private val GEMINI_MODELS = listOf("gemini-3.6-flash", "gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-4-hydrogen")
+
+        /** Overloaded or failing server: worth one more try on the same model. */
+        private val RETRY_SAME = setOf(500, 502, 503, 504)
+        private const val OVERLOAD_WAIT_MS = 2_000L
+
+        const val QUOTA = "Llegaste al límite gratis de Gemini por ahora. No es tu llave: intenta en un rato."
+        const val OVERLOADED = "Google está saturado ahora mismo. No es tu llave: intenta en un minuto."
+
+        /**
+         * The message when every model failed, from each model's final status ([codes], -1 for a
+         * connection error): all quota (429) or all overloaded (5xx) says it isn't the key. A 404 (model
+         * not offered to this key) doesn't change the picture as long as another model answered. Any
+         * other mix returns null, so the last model's own message (key refused, no access...) stands.
+         */
+        internal fun outcomeMessage(codes: List<Int>): String? {
+            val relevant = codes.filter { it != 404 }
+            if (relevant.isEmpty()) return null
+            return when {
+                relevant.all { it == 429 } -> QUOTA
+                relevant.all { it >= 500 } -> OVERLOADED
+                else -> null
+            }
+        }
+
+        /** The element whose [value] is the median; with an even count, the lower of the two middle ones. */
+        internal fun <T> medianOf(xs: List<T>, value: (T) -> Double): T {
+            require(xs.isNotEmpty())
+            return xs.sortedBy(value)[(xs.size - 1) / 2]
+        }
 
         /** The Gemini model that last answered, remembered for the rest of the session. */
         @Volatile private var workingModel: String? = null
@@ -491,6 +593,44 @@ Si la imagen no contiene comida, devuelve items vacío y explícalo en verdict."
                 better = o.optString("better"),
                 question = o.optString("question"),
                 ruler = rulerOf(o.optString("ruler")),
+            )
+        }
+
+        private const val LABEL_SYSTEM = """Lees etiquetas de alimentos empacados de Ecuador. Tu trabajo es copiar la tabla nutricional (información nutricional) tal como está impresa, no estimar.
+
+Las etiquetas ecuatorianas suelen tener una columna "por 100 g" (o "por 100 ml"), una columna "por porción" con el tamaño de la porción en gramos o mililitros, o ambas, y un semáforo nutricional (grasa, azúcar y sal: alto, medio o bajo). El semáforo no trae valores en gramos: no lo uses para inventar números.
+
+Reglas:
+- Copia solo valores impresos. Si una columna no está impresa, ponla en null. Si un nutriente no aparece en una columna, pon null en ese nutriente. Nunca calcules ni inventes valores.
+- kcal es la energía en kilocalorías; si solo aparece en kJ, divide entre 4.184.
+- protein, carbs (carbohidratos totales), fat (grasa total) y fiber (fibra) en gramos.
+- servingG es el tamaño de la porción en gramos (o ml) si está impreso; si no, null.
+- name es el nombre del producto si se ve en la foto; si no, vacío.
+
+Responde SOLO con JSON válido, sin texto extra ni markdown, con esta forma exacta:
+{"name":"","per100":{"kcal":0,"protein":0,"carbs":0,"fat":0,"fiber":0} o null,"servingG":0 o null,"perServing":{"kcal":0,"protein":0,"carbs":0,"fat":0,"fiber":0} o null}
+Si la imagen no muestra una tabla nutricional legible, devuelve per100 y perServing en null."""
+
+        /** Reads [readLabel]'s JSON. A column without kcal counts as not printed; a missing nutrient is 0. */
+        fun parseLabel(raw: String): Label {
+            val start = raw.indexOf('{')
+            val end = raw.lastIndexOf('}')
+            if (start < 0 || end <= start) throw AiException("No entendí la etiqueta. Intenta con otra foto.")
+            val o = try { JSONObject(raw.substring(start, end + 1)) } catch (e: Exception) { throw AiException(ODD) }
+            fun column(k: String): Per100? {
+                val j = o.optJSONObject(k) ?: return null
+                val kcal = number(j, "kcal").takeIf { !it.isNaN() && it >= 0 } ?: return null
+                fun n(f: String) = number(j, f).takeIf { !it.isNaN() && it >= 0 } ?: 0.0
+                return Per100(kcal, n("protein"), n("carbs"), n("fat"), n("fiber"))
+            }
+            val per100 = column("per100")
+            val perServing = column("perServing")
+            if (per100 == null && perServing == null) throw AiException("No pude leer la tabla nutricional. Toma la foto más cerca y con luz.")
+            return Label(
+                name = o.optString("name").takeIf { !o.isNull("name") }.orEmpty().oneLine(80),
+                per100 = per100,
+                servingG = number(o, "servingG").takeIf { !it.isNaN() && it > 0 },
+                perServing = perServing,
             )
         }
 

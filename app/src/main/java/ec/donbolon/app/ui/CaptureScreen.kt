@@ -93,6 +93,7 @@ import ec.donbolon.app.AppModel
 import ec.donbolon.app.ai.Ai
 import ec.donbolon.app.ai.AiException
 import ec.donbolon.app.ai.Analysis
+import ec.donbolon.app.ai.Label as NutritionLabel
 import ec.donbolon.app.data.Fast
 import ec.donbolon.app.data.Measured
 import ec.donbolon.app.data.Portion
@@ -159,6 +160,11 @@ internal object CaptureRules {
 private const val FAILED = "Algo falló. Intenta otra vez."
 private const val ANALYSIS_TIMEOUT_MS = 90_000L
 
+// How photo analyses ask the AI: set by the PortionBench result (on the phone), never by hand.
+// Text-only analyses always use one sample and the default model.
+private const val PHOTO_SAMPLES = 1
+private val PHOTO_MODEL: String? = null
+
 /**
  * Logging a meal: photo (or voice, or words) → the AI estimates every ingredient → the user
  * adjusts portions with a slider → save. Shortcuts for what they eat often keep logging under
@@ -187,7 +193,13 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
     var hunger by rememberSaveable { mutableStateOf(6f) }
     var reason by rememberSaveable { mutableStateOf<Reason?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    // The analysis as the person saw it: its items are already calibrated, so corrections are measured against them.
     var analysis by remember { mutableStateOf<Analysis?>(null) }
+    // Foods whose AI portion was scaled by the person's own past corrections.
+    var calibrated by remember { mutableStateOf(listOf<String>()) }
+    // A package's nutrition table: being read, and what was read.
+    var labelJob by remember { mutableStateOf<Job?>(null) }
+    var label by remember { mutableStateOf<NutritionLabel?>(null) }
     // Every question the AI asked and the person answered; each later estimate gets all of them.
     var clarifications by remember { mutableStateOf(listOf<Pair<String, String>>()) }
     var answer by remember { mutableStateOf("") }
@@ -253,6 +265,34 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         val said = r.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
         if (r.resultCode == Activity.RESULT_OK && !said.isNullOrBlank()) description = listOf(description, said).filter { it.isNotBlank() }.joinToString(", ")
     }
+    val labelFile = remember { File(context.cacheDir, "camera").apply { mkdirs() }.resolve("etiqueta.jpg") }
+    val labelUri = remember { FileProvider.getUriForFile(context, "${context.packageName}.files", labelFile) }
+    val labelCamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        External.back()
+        if (!ok) Images.clearCamera(context)
+        else if (labelJob?.isActive != true) {
+            error = null
+            labelJob = scope.launch {
+                try {
+                    val b = withContext(Dispatchers.IO) { Images.load(context, labelUri).also { Images.clearCamera(context) } }
+                    if (b == null) { error = "No pude abrir esa foto. Prueba otra."; return@launch }
+                    label = withTimeout(ANALYSIS_TIMEOUT_MS) { runInterruptible(Dispatchers.IO) { ai.readLabel(b) } }
+                } catch (e: TimeoutCancellationException) {
+                    error = Ai.SLOW
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: AiException) {
+                    error = e.message ?: FAILED
+                } catch (e: Exception) {
+                    Log.w("DonBolon", Ai.scrub(e.toString()))
+                    error = FAILED
+                } finally {
+                    labelJob = null
+                }
+            }
+        }
+    }
+    fun shootLabel() = runCatching { External.open = true; labelCamera.launch(labelUri) }.onFailure { External.open = false; error = "No encontré una app de cámara." }
     fun shoot() = runCatching { External.open = true; camera.launch(camUri) }.onFailure { External.open = false; error = "No encontré una app de cámara." }
     fun shootSide() = runCatching { External.open = true; sideCamera.launch(sideUri) }.onFailure { External.open = false; error = "No encontré una app de cámara." }
     fun pick() = runCatching { External.open = true; gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
@@ -289,18 +329,26 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                     // height. Measuring centimeters and converting them with densities (Ai.measure + Portion) lost on
                     // the 40-dish Nutrition5k bench: 47.6 % kcal error vs 26.5 % (2026-11-10), so it stays out of the app.
                     val ruler = if (top != null || sideNow != null) Portion.scale(state.profile.hand, dish) else null
+                    val withPhoto = top != null || sideNow != null
                     Triple(
                         runInterruptible(Dispatchers.IO) {
-                            ai.analyze(top, said, cooking, aiContext(), dish = if (ruler == null) dish?.describe() else null, clarifications = asked, side = sideNow, ruler = ruler)
+                            ai.analyze(
+                                top, said, cooking, aiContext(), dish = if (ruler == null) dish?.describe() else null, clarifications = asked, side = sideNow, ruler = ruler,
+                                samples = if (withPhoto) PHOTO_SAMPLES else 1, model = if (withPhoto) PHOTO_MODEL else null,
+                            )
                         },
                         emptyList<Measured>(), "estimado",
                     )
                 }
                 // What the person added by hand is theirs: a new estimate replaces only the AI's part.
                 val keep = CaptureRules.kept(items.toList(), added.toList())
-                analysis = result
+                // The person's own past corrections scale the AI's portions; what they see is the baseline
+                // later corrections are measured against, so they never count twice.
+                val cal = Memory.calibrate(result.items, state)
+                analysis = result.copy(items = cal.items)
+                calibrated = cal.adjusted
                 ruler = used
-                setItems(result.items, measures)
+                setItems(cal.items, measures)
                 keep.forEach { addItem(it) }
                 source = if (photo != null) "foto" else "texto"
                 answer = ""
@@ -327,6 +375,7 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
 
     fun quick(list: List<FoodItem>, from: String) {
         analysis = null
+        calibrated = emptyList()
         setItems(list)
         source = from
         step = Step.REVIEW
@@ -341,7 +390,7 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         scope.launch {
             try {
                 val found = try {
-                    withTimeout(ANALYSIS_TIMEOUT_MS) { runInterruptible(Dispatchers.IO) { ai.analyze(null, text, null, aiContext(), clarifications = clarifications) }.items }
+                    withTimeout(ANALYSIS_TIMEOUT_MS) { Memory.calibrate(runInterruptible(Dispatchers.IO) { ai.analyze(null, text, null, aiContext(), clarifications = clarifications) }.items, state).items }
                 } catch (e: TimeoutCancellationException) {
                     FoodDb.guess(text)
                 } catch (e: CancellationException) {
@@ -431,6 +480,13 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                         onShootTop = { shoot() }, onShootSide = { shootSide() }, onPickTop = { pick() }, onClearSide = { side = null },
                         onSetupHand = { handSetup = true },
                     )
+                    // A package: the AI reads its nutrition table, the math is done here.
+                    if (ai.available) {
+                        Gap(10.dp)
+                        Chip(if (labelJob != null) "🏷️ Leyendo etiqueta… · cancelar" else "🏷️ Etiqueta", false) {
+                            if (labelJob != null) { labelJob?.cancel(); labelJob = null } else shootLabel()
+                        }
+                    }
 
                     val usuals = remember(state.meals.size) { Memory.usuals(state).take(6) }
                     val recent = remember(state.meals.size) {
@@ -489,6 +545,10 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
                 Step.REVIEW -> LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
                     item {
                         Summary(photo, total.kcal, total.protein, total.carbs, total.fat, analysis?.confidence)
+                        if (analysis != null && calibrated.isNotEmpty()) {
+                            Gap(6.dp)
+                            Text("Ajusté a tus porciones: ${calibrated.joinToString().lowercase()}", color = C.muted, fontSize = 12.sp)
+                        }
                         analysis?.let { a ->
                             // Changing the dish here re-runs the estimate with the new scale.
                             Gap(10.dp)
@@ -683,6 +743,16 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         }
     }
 
+    label?.let { l ->
+        LabelSheet(l, onAdd = { f ->
+            val first = items.isEmpty()
+            addItem(f)
+            label = null
+            if (first && analysis == null) source = "etiqueta"
+            step = Step.REVIEW
+        }, onDismiss = { label = null })
+    }
+
     if (searching) FoodSearch(initial = searchQuery, onPick = { addItem(it); searching = false }, onDismiss = { searching = false })
 
     if (confirmDiscard) AlertDialog(
@@ -693,7 +763,7 @@ fun CaptureScreen(model: AppModel, onDone: () -> Unit, onSos: () -> Unit) {
         confirmButton = {
             QuietButton("Descartar", color = C.text) {
                 confirmDiscard = false
-                job?.cancel()
+                job?.cancel(); labelJob?.cancel()
                 Images.clearCamera(context)
                 onDone()
             }

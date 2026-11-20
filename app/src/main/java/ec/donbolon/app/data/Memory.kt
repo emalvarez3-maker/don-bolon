@@ -39,6 +39,9 @@ data class Focus(val weekStart: LocalDate, val title: String, val plan: String, 
     }
 }
 
+/** AI items after the user's own corrections, plus the names of the foods that changed. */
+data class Calibrated(val items: List<FoodItem>, val adjusted: List<String>)
+
 /** A food the user eats often and how much of it, learned from the diary. */
 data class Usual(val name: String, val times: Int, val grams: Double)
 
@@ -87,21 +90,60 @@ object Memory {
             .map { (_, items) -> Usual(items.first().name, items.size, items.map { it.grams }.average()) }
             .sortedByDescending { it.times }.take(10)
 
-    /** Per food, how the user tends to correct the AI (e.g. arroz ×0.8). */
-    fun calibration(s: AppState): List<Pair<String, Double>> =
-        s.corrections.groupBy { norm(it.food) }.map { (_, cs) ->
-            cs.last().food to cs.takeLast(5).map { it.userGrams / it.aiGrams }.average()
-        }.sortedByDescending { abs(it.second - 1) }.take(10)
+    private const val CALIBRATION_DAYS = 120L
+    private const val MIN_CORRECTIONS = 2
+    private const val LAST_CORRECTIONS = 5
 
-    /** What the AI should know about this person before estimating a plate. */
+    /**
+     * Per normalized food name, the factor the user applies to the AI's grams: the median of the
+     * last 5 user/AI ratios from the last 120 days, clamped to 0.6–1.6. Only foods corrected at
+     * least twice get one, so a single slip never moves future estimates. Corrections without a
+     * timestamp (time 0, very old diaries) are kept rather than treated as 1970.
+     */
+    private fun factors(s: AppState, now: Long): Map<String, Pair<String, Double>> {
+        val since = now - CALIBRATION_DAYS * 24 * 60 * 60 * 1000
+        return s.corrections.filter { it.aiGrams > 0 && it.userGrams > 0 && (it.time <= 0 || it.time >= since) }
+            .groupBy { norm(it.food) }
+            .filter { it.value.size >= MIN_CORRECTIONS }
+            .mapValues { (_, cs) ->
+                val ratios = cs.sortedBy { it.time }.takeLast(LAST_CORRECTIONS).map { it.userGrams / it.aiGrams }.sorted()
+                val mid = ratios.size / 2
+                val median = if (ratios.size % 2 == 1) ratios[mid] else (ratios[mid - 1] + ratios[mid]) / 2
+                cs.last().food to median.coerceIn(0.6, 1.6)
+            }
+    }
+
+    /** Per food, the factor [calibrate] applies to the AI's portion (e.g. arroz ×0.8). */
+    fun calibration(s: AppState, now: Long = System.currentTimeMillis()): List<Pair<String, Double>> =
+        factors(s, now).values.sortedByDescending { abs(it.second - 1) }.take(10)
+
+    /**
+     * Applies the user's corrections to an AI estimate in code, so the model cannot ignore them:
+     * every food corrected at least twice is scaled by its [calibration] factor, nutrients included.
+     */
+    fun calibrate(items: List<FoodItem>, s: AppState, now: Long = System.currentTimeMillis()): Calibrated {
+        val k = factors(s, now)
+        if (k.isEmpty()) return Calibrated(items, emptyList())
+        val adjusted = mutableListOf<String>()
+        val out = items.map { item ->
+            val f = k[norm(item.name)]?.second
+            if (f == null || f == 1.0 || item.grams <= 0) item
+            else item.withGrams(item.grams * f).also { if (item.name !in adjusted) adjusted += item.name }
+        }
+        return Calibrated(out, adjusted)
+    }
+
+    /**
+     * What the AI should know about this person before estimating a plate. The user's corrections
+     * are not listed: [calibrate] applies them to the answer, and saying them here too would apply
+     * them twice.
+     */
     fun forAnalysis(s: AppState): String {
         val usual = usuals(s)
-        val cal = calibration(s)
-        if (usual.isEmpty() && cal.isEmpty()) return ""
+        if (usual.isEmpty()) return ""
         return buildString {
             append("LO QUE YA SABES DE SUS PORCIONES (úsalo para calibrar):\n")
             usual.forEach { append("- Suele comer ${it.name}: ~${it.grams.roundToInt()} g (${it.times} veces)\n") }
-            cal.forEach { (food, k) -> append("- Cuando estimas $food, la persona corrige a ×${"%.2f".format(k)} de tu estimación\n") }
         }
     }
 

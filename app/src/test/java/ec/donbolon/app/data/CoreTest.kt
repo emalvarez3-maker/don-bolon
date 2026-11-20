@@ -3,6 +3,7 @@ package ec.donbolon.app.data
 import ec.donbolon.app.ai.Ai
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -106,7 +107,7 @@ class MemoryTest {
         assertEquals("Arroz", fixes[0].food)
     }
 
-    @Test fun analysisContextCarriesUsualPortionsAndCalibration() {
+    @Test fun analysisContextCarriesUsualPortionsButNotCorrections() {
         val today = LocalDate.now()
         val bolon = FoodItem("Bolón de verde", 180.0, 470.0, 7.0, 61.0, 22.0)
         val s = AppState(
@@ -115,7 +116,8 @@ class MemoryTest {
         )
         val ctx = Memory.forAnalysis(s)
         assertTrue(ctx.contains("Bolón de verde: ~180 g"))
-        assertTrue(ctx.contains("Arroz") && ctx.contains("×0.75"))
+        // Memory.calibrate applies corrections in code; repeating them to the AI would apply them twice.
+        assertFalse(ctx.contains("Arroz") || ctx.contains("corrige a ×"))
     }
 
     @Test fun weeklyFocusPicksTheWeakestHabit() {
